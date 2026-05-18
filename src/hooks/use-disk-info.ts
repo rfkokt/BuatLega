@@ -5,6 +5,12 @@ import { getDiskInfo, checkFDAStatus } from '../services/tauri';
 export function useDiskInfo() {
   const { diskInfo, hasFDA, isLoadingDisk, setDiskInfo, setFDA, setLoadingDisk } = useAppStore();
 
+  const refreshFDA = useCallback(async () => {
+    const fda = await checkFDAStatus();
+    setFDA(fda);
+    return fda;
+  }, [setFDA]);
+
   const refresh = useCallback(async () => {
     setLoadingDisk(true);
     try {
@@ -17,5 +23,5 @@ export function useDiskInfo() {
     }
   }, [setDiskInfo, setFDA, setLoadingDisk]);
 
-  return { diskInfo, hasFDA, isLoading: isLoadingDisk, refresh };
+  return { diskInfo, hasFDA, isLoading: isLoadingDisk, refresh, refreshFDA };
 }

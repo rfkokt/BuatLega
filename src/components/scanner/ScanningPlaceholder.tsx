@@ -1,7 +1,12 @@
 import { motion } from 'framer-motion';
-import { FileDashed, FolderDashed, Cpu, Database } from '@phosphor-icons/react';
+import { FileDashed, FolderDashed, Cpu, Database, XCircle } from '@phosphor-icons/react';
 
-export function ScanningPlaceholder({ currentPath }: { currentPath: string }) {
+interface ScanningPlaceholderProps {
+  currentPath: string;
+  onCancel?: () => void;
+}
+
+export function ScanningPlaceholder({ currentPath, onCancel }: ScanningPlaceholderProps) {
   const pathParts = currentPath.split('/').filter(Boolean);
   const activeFolder = pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'System';
 
@@ -12,9 +17,20 @@ export function ScanningPlaceholder({ currentPath }: { currentPath: string }) {
       exit={{ opacity: 0 }}
       className="mt-6"
     >
-      <div className="flex items-center gap-2 mb-4 text-xs font-medium text-text-muted uppercase tracking-widest border-b border-bg-tertiary pb-2">
-        <Cpu size={14} className="text-accent-primary animate-pulse" />
-        <span>Deep Analysis Engine Active</span>
+      <div className="flex items-center justify-between gap-4 mb-4 text-xs font-medium text-text-muted uppercase tracking-widest border-b border-bg-tertiary pb-2">
+        <div className="flex items-center gap-2">
+          <Cpu size={14} className="text-accent-primary animate-pulse" />
+          <span>Deep Analysis Engine Active</span>
+        </div>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            className="flex items-center gap-1.5 text-caution hover:text-caution/80 transition-colors normal-case tracking-normal"
+          >
+            <XCircle size={14} />
+            Cancel scan
+          </button>
+        )}
       </div>
       
       <div className="grid grid-cols-4 gap-4">

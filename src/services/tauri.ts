@@ -1,6 +1,22 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { DiskInfo, ScanResult, ScanProgress, CleanupResult, DevJunkItem, FileNode } from '../types';
+import type {
+  AppInfo,
+  CleanupHistoryEntry,
+  CleanupResult,
+  DevJunkItem,
+  DiskInfo,
+  DuplicateGroup,
+  DuplicateScanProgress,
+  FileNode,
+  IgnoredPath,
+  ScanProgress,
+  ScanResult,
+} from '../types';
+
+// ── App Info ──
+export const getAppInfo = () =>
+  invoke<AppInfo>('get_app_info');
 
 // ── Disk Info ──
 export const getDiskInfo = () =>
@@ -12,12 +28,24 @@ export const checkFDAStatus = () =>
 export const openSystemPreferences = () =>
   invoke<void>('open_system_preferences');
 
+export const restartApp = () =>
+  invoke<void>('restart_app');
+
 // ── Scanning ──
 export const startScan = (path: string, maxDepth?: number) =>
   invoke<ScanResult>('start_scan', { path, maxDepth });
 
+export const cancelScan = () =>
+  invoke<void>('cancel_scan');
+
+export const getCachedScan = (path: string, maxDepth?: number) =>
+  invoke<ScanResult | null>('get_cached_scan', { path, maxDepth });
+
 export const findLargeFiles = (path: string, minSizeBytes: number) =>
   invoke<FileNode[]>('find_large_files', { path, minSizeBytes });
+
+export const findDuplicates = (path: string, minSizeBytes?: number) =>
+  invoke<DuplicateGroup[]>('find_duplicates', { path, minSizeBytes });
 
 // ── Developer Tools ──
 export const scanDevJunk = () =>
@@ -26,6 +54,25 @@ export const scanDevJunk = () =>
 // ── Cleanup ──
 export const cleanupItems = (paths: string[], permanent: boolean = false) =>
   invoke<CleanupResult>('cleanup_items', { paths, permanent });
+
+// ── Persistence ──
+export const listIgnoredPaths = () =>
+  invoke<IgnoredPath[]>('list_ignored_paths');
+
+export const addIgnoredPath = (path: string, reason?: string) =>
+  invoke<IgnoredPath[]>('add_ignored_path', { path, reason });
+
+export const removeIgnoredPath = (path: string) =>
+  invoke<IgnoredPath[]>('remove_ignored_path', { path });
+
+export const listCleanupHistory = () =>
+  invoke<CleanupHistoryEntry[]>('list_cleanup_history');
+
+export const clearCleanupHistory = () =>
+  invoke<void>('clear_cleanup_history');
+
+export const clearScanCache = () =>
+  invoke<void>('clear_scan_cache');
 
 // ── File Operations ──
 export const openInFinder = (path: string) =>
@@ -39,3 +86,8 @@ export const onCleanupProgress = (
   callback: (progress: { completed: number; total: number }) => void
 ): Promise<UnlistenFn> =>
   listen<{ completed: number; total: number }>('cleanup://progress', (event) => callback(event.payload));
+
+export const onDuplicateScanProgress = (
+  callback: (progress: DuplicateScanProgress) => void
+): Promise<UnlistenFn> =>
+  listen<DuplicateScanProgress>('duplicates://progress', (event) => callback(event.payload));

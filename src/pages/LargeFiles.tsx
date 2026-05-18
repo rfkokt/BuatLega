@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   File,
@@ -9,14 +9,15 @@ import {
   CaretDown,
   FunnelSimple,
   Clock,
+  EyeSlash,
   FileMagnifyingGlass,
 } from '@phosphor-icons/react';
 import { useLargeFiles } from '../hooks/use-large-files';
 import { useCleanupStore } from '../stores/cleanup-store';
 import { ConfirmDialog } from '../components/cleanup/ConfirmDialog';
-import { openInFinder } from '../services/tauri';
+import { addIgnoredPath, listIgnoredPaths, openInFinder } from '../services/tauri';
 import { formatBytes, formatRelativeTime, getCategoryColor } from '../lib/format';
-import type { FileNode } from '../types';
+import type { FileNode, IgnoredPath } from '../types';
 
 export default function LargeFiles() {
   const { files, isScanning, error, scan, threshold, setThreshold, thresholds } = useLargeFiles();
@@ -24,15 +25,33 @@ export default function LargeFiles() {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [showConfirm, setShowConfirm] = useState(false);
   const [showThresholdMenu, setShowThresholdMenu] = useState(false);
+  const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPath[]>([]);
 
   useEffect(() => {
     if (files.length === 0) handleScan();
   }, []);
 
-  const handleScan = useCallback(async () => {
+  useEffect(() => {
+    listIgnoredPaths()
+      .then(setIgnoredPaths)
+      .catch(console.error);
+  }, []);
+
+  const isIgnored = useCallback((path: string) => {
+    return ignoredPaths.some((entry) => path === entry.path || path.startsWith(`${entry.path}/`));
+  }, [ignoredPaths]);
+
+  const visibleFiles = useMemo(() => files.filter((file) => !isIgnored(file.path)), [files, isIgnored]);
+
+  const scanWithThreshold = useCallback(async (minSizeBytes: number) => {
+    setSelectedPaths(new Set());
     const homeDir = await import('@tauri-apps/api/path').then((m) => m.homeDir()).catch(() => '/');
-    scan(homeDir);
+    scan(homeDir, minSizeBytes);
   }, [scan]);
+
+  const handleScan = useCallback(() => {
+    scanWithThreshold(threshold);
+  }, [scanWithThreshold, threshold]);
 
   const toggleSelect = useCallback((path: string) => {
     setSelectedPaths((prev) => {
@@ -46,14 +65,24 @@ export default function LargeFiles() {
     });
   }, []);
 
-  const selectedItems: FileNode[] = files.filter((f) => selectedPaths.has(f.path));
+  const handleIgnore = useCallback(async (path: string) => {
+    const ignored = await addIgnoredPath(path, 'Ignored from Large Files');
+    setIgnoredPaths(ignored);
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      next.delete(path);
+      return next;
+    });
+  }, []);
+
+  const selectedItems: FileNode[] = visibleFiles.filter((f) => selectedPaths.has(f.path));
   const selectedSize = selectedItems.reduce((a, i) => a + i.size, 0);
 
-  // Check if file is stale (not modified in 6+ months)
-  const isStale = (lastModified?: number) => {
-    if (!lastModified) return false;
+  // Check if file is stale (not accessed in 6+ months, with modified time as fallback)
+  const isStale = (lastSeen?: number) => {
+    if (!lastSeen) return false;
     const sixMonthsAgo = Date.now() / 1000 - 180 * 24 * 3600;
-    return lastModified < sixMonthsAgo;
+    return lastSeen < sixMonthsAgo;
   };
 
   return (
@@ -70,7 +99,7 @@ export default function LargeFiles() {
           <h1 className="text-2xl font-bold text-text-primary">Large Files</h1>
           <p className="text-sm text-text-secondary mt-1">
             {files.length > 0
-              ? `${files.length} files larger than ${formatBytes(threshold)}`
+              ? `${visibleFiles.length} files larger than ${formatBytes(threshold)}`
               : `Find files larger than ${formatBytes(threshold)}`
             }
           </p>
@@ -114,7 +143,7 @@ export default function LargeFiles() {
                       onClick={() => {
                         setThreshold(value);
                         setShowThresholdMenu(false);
-                        // Re-scan with new threshold on next effect
+                        scanWithThreshold(value);
                       }}
                       className={`w-full px-3 py-2 text-xs text-left transition-colors ${
                         threshold === value
@@ -218,7 +247,7 @@ export default function LargeFiles() {
       )}
 
       {/* Results */}
-      {!isScanning && files.length > 0 && (
+      {!isScanning && visibleFiles.length > 0 && (
         <>
           {/* Summary */}
           <div className="grid grid-cols-3 gap-4">
@@ -229,7 +258,7 @@ export default function LargeFiles() {
             >
               <p className="text-xs text-white/50">Total Size</p>
               <p className="text-xl font-bold text-[#FF2E93] mt-1">
-                {formatBytes(files.reduce((a, f) => a + f.size, 0))}
+                {formatBytes(visibleFiles.reduce((a, f) => a + f.size, 0))}
               </p>
             </motion.div>
             <motion.div
@@ -239,7 +268,7 @@ export default function LargeFiles() {
               className="glass rounded-2xl p-5 border border-white/5"
             >
               <p className="text-xs text-white/50">Files Found</p>
-              <p className="text-xl font-bold text-[#00F0FF] mt-1">{files.length}</p>
+              <p className="text-xl font-bold text-[#00F0FF] mt-1">{visibleFiles.length}</p>
             </motion.div>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -249,7 +278,7 @@ export default function LargeFiles() {
             >
               <p className="text-xs text-white/50">Stale Files</p>
               <p className="text-xl font-bold text-[#FF9F0A] mt-1">
-                {files.filter((f) => isStale(f.last_modified)).length}
+                {visibleFiles.filter((f) => isStale(f.last_accessed ?? f.last_modified)).length}
               </p>
             </motion.div>
           </div>
@@ -258,18 +287,19 @@ export default function LargeFiles() {
           <div className="glass rounded-3xl overflow-hidden border border-white/5 mt-4">
             {/* Header */}
             <div className="flex items-center gap-3 px-4 py-3 bg-white/5 border-b border-white/5 text-xs text-white/50 font-medium uppercase tracking-wider">
-              <div className="w-8" />
+              <div className="w-16" />
               <span className="flex-1">File</span>
               <span className="w-24 text-right">Size</span>
               <span className="w-24">Category</span>
-              <span className="w-28 text-right">Last Modified</span>
+              <span className="w-28 text-right">Last Opened</span>
               <div className="w-8" />
             </div>
 
             {/* Rows */}
             <div className="max-h-[55vh] overflow-y-auto">
-              {files.map((file, i) => {
-                const stale = isStale(file.last_modified);
+              {visibleFiles.map((file, i) => {
+                const lastSeen = file.last_accessed ?? file.last_modified;
+                const stale = isStale(lastSeen);
                 const catColor = getCategoryColor(file.file_type);
 
                 return (
@@ -329,16 +359,25 @@ export default function LargeFiles() {
                     </span>
 
                     <span className="w-28 text-right text-xs text-text-muted tabular-nums">
-                      {file.last_modified ? formatRelativeTime(file.last_modified) : '—'}
+                      {lastSeen ? formatRelativeTime(lastSeen) : '—'}
                     </span>
 
-                    <button
-                      onClick={() => openInFinder(file.path)}
-                      className="w-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-text-primary"
-                      title="Open in Finder"
-                    >
-                      <ArrowSquareOut size={14} />
-                    </button>
+                    <div className="w-16 flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => handleIgnore(file.path)}
+                        className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-[#FF9F0A]"
+                        title="Ignore"
+                      >
+                        <EyeSlash size={14} />
+                      </button>
+                      <button
+                        onClick={() => openInFinder(file.path)}
+                        className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-text-primary"
+                        title="Open in Finder"
+                      >
+                        <ArrowSquareOut size={14} />
+                      </button>
+                    </div>
                   </motion.div>
                 );
               })}
@@ -348,7 +387,7 @@ export default function LargeFiles() {
       )}
 
       {/* Empty state */}
-      {!isScanning && files.length === 0 && !error && (
+      {!isScanning && visibleFiles.length === 0 && !error && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}

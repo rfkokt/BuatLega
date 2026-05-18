@@ -7,8 +7,8 @@ import {
   Lightning,
   CaretRight,
   House,
-  Spinner,
   HardDrives,
+  XCircle,
 } from '@phosphor-icons/react';
 import { useScanStore } from '../stores/scan-store';
 import { useCleanupStore } from '../stores/cleanup-store';
@@ -27,7 +27,7 @@ type SortKey = 'name' | 'size' | 'file_type' | 'safety_level' | 'last_modified';
 export default function Scanner() {
   const { scanResult, isScanning, progress, selectedPaths } = useScanStore();
   const { toggleSelected, selectAllSafe, clearSelection } = useScanStore();
-  const { scan } = useScanner();
+  const { scan, cancel } = useScanner();
 
   // Drill-down state
   const [navStack, setNavStack] = useState<FileNode[]>([]);
@@ -87,7 +87,7 @@ export default function Scanner() {
         .then((m) => m.homeDir())
         .catch(() => '/');
       setNavStack([]);
-      scan(homeDir, 3);
+      scan(homeDir, 3, { forceRefresh: Boolean(scanResult) });
     } catch (e) {
       console.error(e);
     }
@@ -157,7 +157,7 @@ export default function Scanner() {
         transition={{ duration: 0.15 }}
         className="h-full"
       >
-        <ScanningPlaceholder currentPath={progress?.current_path || ''} />
+        <ScanningPlaceholder currentPath={progress?.current_path || ''} onCancel={cancel} />
       </motion.div>
     );
   }
@@ -200,14 +200,17 @@ export default function Scanner() {
             </>
           )}
           <button
-            onClick={handleStartScan}
-            disabled={isScanning}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-accent-secondary/70 hover:bg-accent-secondary/90 transition-opacity disabled:opacity-50 border border-accent-secondary/30 shadow-lg shadow-accent-secondary/10"
+            onClick={isScanning ? cancel : handleStartScan}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white transition-opacity border shadow-lg ${
+              isScanning
+                ? 'bg-caution/80 hover:bg-caution border-caution/40 shadow-caution/10'
+                : 'bg-accent-secondary/70 hover:bg-accent-secondary/90 border-accent-secondary/30 shadow-accent-secondary/10'
+            }`}
           >
             {isScanning ? (
               <>
-                <Spinner size={16} className="animate-spin" />
-                Scanning...
+                <XCircle size={16} />
+                Cancel
               </>
             ) : (
               <>
@@ -339,6 +342,13 @@ export default function Scanner() {
                 <p className="text-sm font-medium text-accent-primary">
                   {progress.scanned.toLocaleString()} files
                 </p>
+                <button
+                  onClick={cancel}
+                  className="mt-2 inline-flex items-center gap-1 text-xs text-caution hover:text-caution/80 transition-colors"
+                >
+                  <XCircle size={12} />
+                  Cancel scan
+                </button>
               </div>
             </div>
           </motion.div>

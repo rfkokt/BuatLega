@@ -6,7 +6,9 @@ import {
   Wrench,
   Gear,
   FileMagnifyingGlass,
+  CopySimple,
 } from '@phosphor-icons/react';
+import { useAppInfo } from '../../hooks/use-app-info';
 
 const navItems = [
   { to: '/', icon: HardDrives, label: 'Dashboard' },
@@ -14,11 +16,14 @@ const navItems = [
   { to: '/visualize', icon: ChartDonut, label: 'Visualizer' },
   { to: '/dev-tools', icon: Wrench, label: 'Dev Tools' },
   { to: '/large-files', icon: FileMagnifyingGlass, label: 'Large Files' },
+  { to: '/duplicates', icon: CopySimple, label: 'Duplicates' },
   { to: '/settings', icon: Gear, label: 'Settings' },
 ];
 
 export function Sidebar() {
   const location = useLocation();
+  const { appInfo } = useAppInfo();
+
   return (
     <aside className="w-20 h-full flex flex-col bg-white/5 backdrop-blur-md border-r border-white/10 z-50">
       {/* Drag region for macOS title bar */}
@@ -52,7 +57,9 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="py-4 flex justify-center border-t border-white/10">
-        <p className="text-[10px] text-white/40 font-medium">v0.1</p>
+        <p className="text-[10px] text-white/40 font-medium">
+          {appInfo ? `v${appInfo.version}` : 'v...'}
+        </p>
       </div>
     </aside>
   );

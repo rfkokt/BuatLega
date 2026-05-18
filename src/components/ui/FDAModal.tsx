@@ -1,14 +1,36 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldWarning, ArrowSquareOut, X } from '@phosphor-icons/react';
+import { ShieldWarning, ArrowSquareOut, ArrowClockwise, X } from '@phosphor-icons/react';
 import { useState } from 'react';
-import { openSystemPreferences } from '../../services/tauri';
+import { openSystemPreferences, restartApp } from '../../services/tauri';
 
 interface FDAModalProps {
   isOpen: boolean;
   onDismiss: () => void;
+  onCheckAccess?: () => Promise<boolean>;
 }
 
-export function FDAModal({ isOpen, onDismiss }: FDAModalProps) {
+export function FDAModal({ isOpen, onDismiss, onCheckAccess }: FDAModalProps) {
+  const [isChecking, setIsChecking] = useState(false);
+  const [checkFailed, setCheckFailed] = useState(false);
+
+  const handleCheckAccess = async () => {
+    if (!onCheckAccess) return;
+
+    setIsChecking(true);
+    setCheckFailed(false);
+
+    try {
+      const hasAccess = await onCheckAccess();
+      if (hasAccess) {
+        onDismiss();
+      } else {
+        setCheckFailed(true);
+      }
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -64,6 +86,20 @@ export function FDAModal({ isOpen, onDismiss }: FDAModalProps) {
                   <p>
                     Without it, many directories (like Library and system caches) will be inaccessible, and your scan results will be incomplete.
                   </p>
+                  {checkFailed && (
+                    <div className="mt-2 p-3 rounded-xl bg-[#FF9F0A]/10 border border-[#FF9F0A]/20">
+                      <p className="text-[#FF9F0A] text-xs mb-2">
+                        macOS requires a full restart for permission changes to take effect.
+                      </p>
+                      <button
+                        onClick={() => restartApp().catch(console.error)}
+                        className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-full text-xs font-medium text-white bg-[#FF9F0A] hover:bg-[#FF9F0A]/90 transition-all"
+                      >
+                        <ArrowClockwise size={14} />
+                        Restart BuatLega Now
+                      </button>
+                    </div>
+                  )}
 
                   <div className="mt-4 p-4 rounded-2xl bg-white/5 border border-white/10">
                     <p className="text-xs text-white/40 font-medium mb-2">HOW TO ENABLE:</p>
@@ -80,10 +116,11 @@ export function FDAModal({ isOpen, onDismiss }: FDAModalProps) {
               {/* Footer */}
               <div className="p-6 pt-4 flex gap-3">
                 <button
-                  onClick={onDismiss}
+                  onClick={onCheckAccess ? handleCheckAccess : onDismiss}
+                  disabled={isChecking}
                   className="flex-1 px-4 py-2.5 rounded-full text-sm font-medium text-white/60 hover:text-white bg-white/5 hover:bg-white/10 transition-all border border-white/10"
                 >
-                  Later
+                  {isChecking ? 'Checking...' : onCheckAccess ? 'I Enabled It' : 'Later'}
                 </button>
                 <button
                   onClick={() => {

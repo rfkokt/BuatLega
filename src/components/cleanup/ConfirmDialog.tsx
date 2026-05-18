@@ -25,7 +25,7 @@ export function ConfirmDialog({
 
   const safeItems = items || [];
   const hasCautionItems = safeItems.some((i) => i.safety_level === 'Caution');
-  const needsTyping = hasCautionItems;
+  const needsTyping = hasCautionItems || isPermanent;
   const isConfirmEnabled = !needsTyping || confirmText.toUpperCase() === 'DELETE';
 
   const safeCount = safeItems.filter((i) => i.safety_level === 'Safe').length;
@@ -134,11 +134,13 @@ export function ConfirmDialog({
                     )}
                   </div>
 
-                  {/* Typing confirmation for caution items */}
+                  {/* Typing confirmation for irreversible or risky cleanup */}
                   {needsTyping && (
                     <div className="mt-4">
                       <p className="text-xs text-[#E11D48] mb-2 font-medium">
-                        ⚠️ You have caution items. Type DELETE to confirm:
+                        {isPermanent
+                          ? 'Permanent cleanup cannot be undone. Type DELETE to confirm:'
+                          : 'You have caution items. Type DELETE to confirm:'}
                       </p>
                       <input
                         type="text"

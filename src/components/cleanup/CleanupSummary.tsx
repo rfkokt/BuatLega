@@ -10,6 +10,10 @@ interface CleanupSummaryProps {
 
 export function CleanupSummary({ result, onDismiss }: CleanupSummaryProps) {
   const hasFailures = result.failed_items.length > 0;
+  const movedToTrashOnly = result.trashed_bytes > 0 && result.freed_bytes === 0;
+  const resultLabel = movedToTrashOnly
+    ? `${formatBytes(result.trashed_bytes)} moved to Trash`
+    : `${formatBytes(result.freed_bytes)} freed`;
 
   return (
     <motion.div
@@ -40,7 +44,7 @@ export function CleanupSummary({ result, onDismiss }: CleanupSummaryProps) {
                   {hasFailures ? 'Cleanup Completed with Errors' : 'Cleanup Complete!'}
                 </h3>
                 <p className="text-xl font-bold mt-0.5" style={{ color: hasFailures ? '#f59e0b' : '#22c55e' }}>
-                  {formatBytes(result.freed_bytes)} freed
+                  {resultLabel}
                 </p>
               </div>
             </div>
@@ -54,6 +58,7 @@ export function CleanupSummary({ result, onDismiss }: CleanupSummaryProps) {
 
           <div className="mt-3 flex items-center gap-4 text-xs text-text-muted">
             <span>{result.items_deleted} items cleaned</span>
+            {movedToTrashOnly && <span>Empty Trash to reclaim space</span>}
             {hasFailures && (
               <span className="text-review">
                 {result.failed_items.length} failed

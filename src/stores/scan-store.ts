@@ -26,10 +26,20 @@ export const useScanStore = create<ScanStore>((set, get) => ({
   error: null,
   selectedPaths: new Set(),
 
-  setScanResult: (result) => set({ scanResult: result, isScanning: false, progress: null }),
-  setScanning: (isScanning) => set({ isScanning, error: null }),
+  setScanResult: (result) => set({
+    scanResult: result,
+    isScanning: false,
+    progress: null,
+    error: null,
+    selectedPaths: new Set(),
+  }),
+  setScanning: (isScanning) => set(
+    isScanning
+      ? { isScanning, error: null }
+      : { isScanning, error: null, progress: null }
+  ),
   setProgress: (progress) => set({ progress }),
-  setError: (error) => set({ error, isScanning: false }),
+  setError: (error) => set({ error, isScanning: false, progress: null }),
 
   toggleSelected: (path) => {
     const current = new Set(get().selectedPaths);

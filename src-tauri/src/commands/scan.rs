@@ -1,13 +1,15 @@
-use crate::models::{FileNode, ScanProgress, ScanResult};
+use crate::commands::persistence::{is_ignored_path, load_ignored_paths, save_scan_cache};
+use crate::models::{FileCategory, FileNode, SafetyLevel, ScanProgress, ScanResult};
 use crate::scanner::categorizer::categorize_path;
 use crate::scanner::rules::assess_safety;
+use crate::storage::{accessed_secs, allocated_size, modified_secs};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 
-/// Directories to skip during scanning (system/virtual dirs that cause hangs)
-const SKIP_DIRS: &[&str] = &[
+/// Directory names to skip during scanning (system/virtual dirs that cause hangs)
+const SKIP_DIR_NAMES: &[&str] = &[
     ".Spotlight-V100",
     ".fseventsd",
     ".Trashes",
@@ -15,14 +17,15 @@ const SKIP_DIRS: &[&str] = &[
     ".vol",
     "System",
     ".TemporaryItems",
-    "private/var/db",
-    "private/var/folders",
 ];
+
+const SKIP_PATH_FRAGMENTS: &[&str] = &["/private/var/db", "/private/var/folders"];
 
 /// Throttle interval — sleep this long every N files to let macOS I/O breathe
 const THROTTLE_SLEEP: Duration = Duration::from_millis(1);
 /// How many files to process between throttle sleeps
 const THROTTLE_BATCH: u64 = 500;
+static SCAN_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 /// Set current thread to background I/O + CPU priority on macOS.
 /// This tells the kernel to deprioritize this thread's disk access,
@@ -58,16 +61,24 @@ pub async fn start_scan(
     }
 
     let depth = max_depth.unwrap_or(u32::MAX);
+    let cache_path = path.clone();
+    let cache_depth = max_depth;
+    SCAN_CANCELLED.store(false, Ordering::Relaxed);
 
     // Run the scan in a blocking thread so it doesn't starve the async runtime
-    let result = tokio::task::spawn_blocking(move || {
+    let task_result = tokio::task::spawn_blocking(move || -> Result<ScanResult, String> {
         // Apply macOS I/O throttling to this thread
         throttle_current_thread();
+
+        if SCAN_CANCELLED.load(Ordering::Relaxed) {
+            return Err("Scan cancelled".to_string());
+        }
 
         let mut file_count: u64 = 0;
         let mut dir_count: u64 = 0;
         let mut categories: HashMap<String, u64> = HashMap::new();
         let scanned = AtomicU64::new(0);
+        let ignored_paths = load_ignored_paths().unwrap_or_default();
 
         let root = scan_directory(
             &root_path,
@@ -77,29 +88,68 @@ pub async fn start_scan(
             &mut dir_count,
             &mut categories,
             &scanned,
-        );
+            None,
+            &ignored_paths,
+        )?;
 
         let duration = start.elapsed().as_millis() as u64;
         let total_size = root.size;
 
-        ScanResult {
+        Ok(ScanResult {
             root,
             total_size,
             file_count,
             dir_count,
             scan_duration_ms: duration,
             categories,
-        }
+        })
+    })
+    .await;
+
+    SCAN_CANCELLED.store(false, Ordering::Relaxed);
+    let result = task_result.map_err(|e| format!("Scan task failed: {}", e))??;
+
+    let result_for_cache = result.clone();
+    let cache_result = tokio::task::spawn_blocking(move || {
+        save_scan_cache(&cache_path, cache_depth, &result_for_cache)
     })
     .await
-    .map_err(|e| format!("Scan task failed: {}", e))?;
+    .map_err(|e| format!("Scan cache task failed: {}", e))?;
+
+    if let Err(e) = cache_result {
+        log::warn!("Failed to save scan cache: {}", e);
+    }
 
     Ok(result)
 }
 
+#[tauri::command]
+pub async fn cancel_scan() -> Result<(), String> {
+    SCAN_CANCELLED.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
 /// Check if a directory name should be skipped
 fn should_skip(name: &str) -> bool {
-    SKIP_DIRS.iter().any(|s| name == *s)
+    SKIP_DIR_NAMES.iter().any(|s| name == *s)
+}
+
+fn should_skip_path(path: &std::path::Path, name: &str) -> bool {
+    if should_skip(name) {
+        return true;
+    }
+
+    let path_str = path.to_string_lossy();
+    SKIP_PATH_FRAGMENTS
+        .iter()
+        .any(|fragment| path_str.contains(fragment))
+}
+
+fn aggregates_children(category: &FileCategory) -> bool {
+    matches!(
+        category,
+        FileCategory::DevCache | FileCategory::Cache | FileCategory::Log | FileCategory::Trash
+    )
 }
 
 fn scan_directory(
@@ -110,7 +160,13 @@ fn scan_directory(
     dir_count: &mut u64,
     categories: &mut HashMap<String, u64>,
     scanned: &AtomicU64,
-) -> FileNode {
+    inherited_category: Option<FileCategory>,
+    ignored_paths: &[crate::models::IgnoredPath],
+) -> Result<FileNode, String> {
+    if SCAN_CANCELLED.load(Ordering::Relaxed) {
+        return Err("Scan cancelled".to_string());
+    }
+
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -118,6 +174,9 @@ fn scan_directory(
 
     let category = categorize_path(path, &name);
     let safety = assess_safety(path, &category);
+    let active_category = inherited_category
+        .clone()
+        .or_else(|| aggregates_children(&category).then(|| category.clone()));
 
     let mut children = Vec::new();
     let mut total_size: u64 = 0;
@@ -126,19 +185,45 @@ fn scan_directory(
         match std::fs::read_dir(path) {
             Ok(entries) => {
                 for entry in entries.flatten() {
+                    if SCAN_CANCELLED.load(Ordering::Relaxed) {
+                        return Err("Scan cancelled".to_string());
+                    }
+
                     let entry_path = entry.path();
-                    let entry_name = entry
-                        .file_name()
-                        .to_string_lossy()
-                        .to_string();
+                    let entry_name = entry.file_name().to_string_lossy().to_string();
 
                     // Skip system directories that cause hangs or are useless
-                    if should_skip(&entry_name) {
+                    if should_skip_path(&entry_path, &entry_name) {
+                        continue;
+                    }
+                    if is_ignored_path(&entry_path, ignored_paths) {
                         continue;
                     }
 
-                    if let Ok(metadata) = entry.metadata() {
-                        if metadata.is_dir() {
+                    if let Ok(metadata) = std::fs::symlink_metadata(&entry_path) {
+                        let file_type = metadata.file_type();
+
+                        if file_type.is_symlink() {
+                            let link_size = allocated_size(&metadata);
+                            total_size += link_size;
+
+                            let file_cat = categorize_path(&entry_path, &entry_name);
+                            let bucket =
+                                active_category.clone().unwrap_or_else(|| file_cat.clone());
+                            *categories.entry(bucket.to_string()).or_insert(0) += link_size;
+
+                            children.push(FileNode {
+                                name: entry_name,
+                                path: entry_path.to_string_lossy().to_string(),
+                                size: link_size,
+                                is_dir: false,
+                                file_type: file_cat,
+                                children: None,
+                                last_accessed: accessed_secs(&metadata),
+                                last_modified: modified_secs(&metadata),
+                                safety_level: SafetyLevel::Review,
+                            });
+                        } else if file_type.is_dir() {
                             *dir_count += 1;
                             let child = scan_directory(
                                 &entry_path,
@@ -148,25 +233,23 @@ fn scan_directory(
                                 dir_count,
                                 categories,
                                 scanned,
-                            );
+                                active_category.clone(),
+                                ignored_paths,
+                            )?;
                             total_size += child.size;
                             children.push(child);
                         } else {
                             *file_count += 1;
-                            let file_size = metadata.len();
+                            let file_size = allocated_size(&metadata);
                             total_size += file_size;
 
                             let file_cat = categorize_path(&entry_path, &entry_name);
                             let file_safety = assess_safety(&entry_path, &file_cat);
+                            let bucket =
+                                active_category.clone().unwrap_or_else(|| file_cat.clone());
 
-                            let cat_key = file_cat.to_string();
+                            let cat_key = bucket.to_string();
                             *categories.entry(cat_key).or_insert(0) += file_size;
-
-                            let last_modified = metadata
-                                .modified()
-                                .ok()
-                                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                                .map(|d| d.as_secs() as i64);
 
                             children.push(FileNode {
                                 name: entry_name,
@@ -175,8 +258,8 @@ fn scan_directory(
                                 is_dir: false,
                                 file_type: file_cat,
                                 children: None,
-                                last_accessed: None,
-                                last_modified,
+                                last_accessed: accessed_secs(&metadata),
+                                last_modified: modified_secs(&metadata),
                                 safety_level: file_safety,
                             });
                         }
@@ -201,7 +284,11 @@ fn scan_directory(
                 }
             }
             Err(e) => {
-                log::warn!("Skipping inaccessible directory: {} ({})", path.display(), e);
+                log::warn!(
+                    "Skipping inaccessible directory: {} ({})",
+                    path.display(),
+                    e
+                );
             }
         }
     }
@@ -209,33 +296,29 @@ fn scan_directory(
     // Sort children by size descending
     children.sort_by(|a, b| b.size.cmp(&a.size));
 
-    let dir_cat_key = category.to_string();
-    *categories.entry(dir_cat_key).or_insert(0) += total_size;
-
     let last_modified = std::fs::metadata(path)
         .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64);
+        .and_then(|metadata| modified_secs(&metadata));
 
-    FileNode {
+    let last_accessed = std::fs::metadata(path)
+        .ok()
+        .and_then(|metadata| accessed_secs(&metadata));
+
+    Ok(FileNode {
         name,
         path: path.to_string_lossy().to_string(),
         size: total_size,
         is_dir: true,
         file_type: category,
         children: Some(children),
-        last_accessed: None,
+        last_accessed,
         last_modified,
         safety_level: safety,
-    }
+    })
 }
 
 #[tauri::command]
-pub async fn find_large_files(
-    path: String,
-    min_size_bytes: u64,
-) -> Result<Vec<FileNode>, String> {
+pub async fn find_large_files(path: String, min_size_bytes: u64) -> Result<Vec<FileNode>, String> {
     let root_path = std::path::Path::new(&path).to_path_buf();
     if !root_path.exists() {
         return Err(format!("Path does not exist: {}", path));
@@ -245,6 +328,7 @@ pub async fn find_large_files(
     let large_files = tokio::task::spawn_blocking(move || {
         throttle_current_thread();
         let mut results = Vec::new();
+        let ignored_paths = load_ignored_paths().unwrap_or_default();
 
         for entry in jwalk::WalkDir::new(&root_path)
             .skip_hidden(false)
@@ -254,25 +338,22 @@ pub async fn find_large_files(
         {
             // Skip system directories
             if let Some(name) = entry.path().file_name() {
-                if should_skip(&name.to_string_lossy()) {
+                if should_skip_path(&entry.path(), &name.to_string_lossy()) {
                     continue;
                 }
+            }
+            if is_ignored_path(&entry.path(), &ignored_paths) {
+                continue;
             }
 
             if entry.file_type().is_file() {
                 if let Ok(metadata) = entry.metadata() {
-                    let size = metadata.len();
+                    let size = allocated_size(&metadata);
                     if size >= min_size_bytes {
                         let name = entry.file_name().to_string_lossy().to_string();
                         let entry_path = entry.path();
                         let category = categorize_path(&entry_path, &name);
                         let safety = assess_safety(&entry_path, &category);
-
-                        let last_modified = metadata
-                            .modified()
-                            .ok()
-                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                            .map(|d| d.as_secs() as i64);
 
                         results.push(FileNode {
                             name,
@@ -281,8 +362,8 @@ pub async fn find_large_files(
                             is_dir: false,
                             file_type: category,
                             children: None,
-                            last_accessed: None,
-                            last_modified,
+                            last_accessed: accessed_secs(&metadata),
+                            last_modified: modified_secs(&metadata),
                             safety_level: safety,
                         });
                     }

@@ -32,7 +32,9 @@ pub async fn get_disk_info() -> Result<DiskInfo, String> {
     if free.is_none() {
         for line in stdout.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("Volume Free Space:") || trimmed.starts_with("Volume Available Space:") {
+            if trimmed.starts_with("Volume Free Space:")
+                || trimmed.starts_with("Volume Available Space:")
+            {
                 free = parse_bytes_from_diskutil(trimmed);
                 break;
             }
@@ -62,16 +64,43 @@ fn parse_bytes_from_diskutil(line: &str) -> Option<u64> {
 
 #[tauri::command]
 pub async fn check_fda_status() -> Result<bool, String> {
-    // Try to read a protected directory as a proxy for FDA
-    let test_path = dirs::home_dir()
-        .map(|h| h.join("Library/Mail"))
-        .unwrap_or_default();
+    let Some(home) = dirs::home_dir() else {
+        return Ok(true);
+    };
 
-    match std::fs::read_dir(&test_path) {
-        Ok(_) => Ok(true),
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Ok(false),
-        Err(_) => Ok(true), // Directory might not exist, which is fine
+    // Full Disk Access is best detected by probing multiple TCC-protected
+    // locations. A single folder can be absent or have app-specific ACLs, which
+    // makes checks like ~/Library/Mail prone to false negatives.
+    let protected_paths = [
+        "Library/Mail",
+        "Library/Messages",
+        "Library/Safari",
+        "Library/Calendars",
+        "Library/Application Support/AddressBook",
+    ];
+
+    let mut saw_permission_denied = false;
+
+    for relative_path in protected_paths {
+        let test_path = home.join(relative_path);
+
+        match std::fs::read_dir(&test_path) {
+            Ok(_) => return Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                saw_permission_denied = true;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                log::debug!(
+                    "Full Disk Access probe skipped {}: {}",
+                    test_path.display(),
+                    e
+                );
+            }
+        }
     }
+
+    Ok(!saw_permission_denied)
 }
 
 #[tauri::command]
@@ -80,5 +109,34 @@ pub async fn open_system_preferences() -> Result<(), String> {
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
         .spawn()
         .map_err(|e| format!("Failed to open System Settings: {}", e))?;
+    Ok(())
+}
+
+/// Restart the app by spawning a new instance and exiting the current one.
+/// macOS caches TCC permissions per-process, so a full restart is needed
+/// after the user toggles Full Disk Access in System Settings.
+#[tauri::command]
+pub async fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to get current executable: {}", e))?;
+
+    // On macOS, the binary is inside Foo.app/Contents/MacOS/foo.
+    // We need to find the .app bundle and use `open` to relaunch it properly.
+    let exe_path = current_exe.to_string_lossy().to_string();
+    if let Some(app_bundle_end) = exe_path.find(".app/") {
+        let app_bundle = &exe_path[..app_bundle_end + 4]; // include ".app"
+        std::process::Command::new("open")
+            .args(["-n", "-a", app_bundle])
+            .spawn()
+            .map_err(|e| format!("Failed to restart: {}", e))?;
+    } else {
+        // Fallback: spawn the binary directly (dev mode)
+        std::process::Command::new(&current_exe)
+            .spawn()
+            .map_err(|e| format!("Failed to restart: {}", e))?;
+    }
+
+    // Exit current instance
+    app.exit(0);
     Ok(())
 }

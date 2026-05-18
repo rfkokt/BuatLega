@@ -30,7 +30,15 @@ pub struct DiskInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CleanupResult {
+    /// Bytes immediately freed from disk. Moving to Trash does not usually free
+    /// space until the user empties Trash.
     pub freed_bytes: u64,
+    /// Bytes that were selected and successfully cleaned.
+    pub reclaimable_bytes: u64,
+    /// Bytes moved to Trash and recoverable by the user.
+    pub trashed_bytes: u64,
+    /// Bytes permanently removed.
+    pub permanently_deleted_bytes: u64,
     pub items_deleted: u64,
     pub failed_items: Vec<CleanupError>,
 }
@@ -39,4 +47,55 @@ pub struct CleanupResult {
 pub struct CleanupError {
     pub path: String,
     pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IgnoredPath {
+    pub path: String,
+    pub reason: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupHistoryEntry {
+    pub created_at: i64,
+    pub freed_bytes: u64,
+    pub reclaimable_bytes: u64,
+    pub trashed_bytes: u64,
+    pub permanently_deleted_bytes: u64,
+    pub items_count: u64,
+    pub failed_count: u64,
+    pub permanent: bool,
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DuplicateFile {
+    pub name: String,
+    pub path: String,
+    /// Logical content size. Duplicate detection compares this value and the
+    /// file content hash.
+    pub size: u64,
+    /// Approximate bytes occupied on disk.
+    pub allocated_size: u64,
+    pub file_type: super::file_node::FileCategory,
+    pub last_accessed: Option<i64>,
+    pub last_modified: Option<i64>,
+    pub safety_level: super::file_node::SafetyLevel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DuplicateGroup {
+    pub id: String,
+    pub content_size: u64,
+    pub wasted_bytes: u64,
+    pub files: Vec<DuplicateFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DuplicateScanProgress {
+    pub scanned_files: u64,
+    pub candidate_files: u64,
+    pub current_path: String,
+    pub phase: String,
 }

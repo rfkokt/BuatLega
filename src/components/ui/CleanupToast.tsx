@@ -9,6 +9,11 @@ import { formatBytes } from '../../lib/format';
  */
 export function CleanupToast() {
   const { isCleaningUp, progress, result, dismissResult } = useCleanupStore();
+  const cleanedLabel = result
+    ? result.trashed_bytes > 0 && result.freed_bytes === 0
+      ? `${formatBytes(result.trashed_bytes)} moved to Trash`
+      : `${formatBytes(result.freed_bytes)} freed`
+    : '';
 
   return (
     <div className="fixed bottom-6 right-6 z-[999] flex flex-col gap-3 items-end">
@@ -63,7 +68,7 @@ export function CleanupToast() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-white">Cleanup Complete</p>
                 <p className="text-xs text-white/50">
-                  {result.items_deleted} items removed · {formatBytes(result.freed_bytes)} freed
+                  {result.items_deleted} items cleaned · {cleanedLabel}
                 </p>
               </div>
               <button
@@ -80,6 +85,11 @@ export function CleanupToast() {
                   {result.failed_items.length} items skipped (protected or in use)
                 </p>
               </div>
+            )}
+            {result.trashed_bytes > 0 && result.freed_bytes === 0 && (
+              <p className="mt-3 pt-3 border-t border-white/10 text-xs text-white/45">
+                Space is reclaimed after Trash is emptied.
+              </p>
             )}
           </motion.div>
         )}

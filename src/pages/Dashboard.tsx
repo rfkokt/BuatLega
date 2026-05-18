@@ -21,7 +21,7 @@ import { formatBytes, formatPercent } from '../lib/format';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { diskInfo, hasFDA, isLoading, refresh } = useDiskInfo();
+  const { diskInfo, hasFDA, isLoading, refresh, refreshFDA } = useDiskInfo();
   const { scanResult, isScanning, progress } = useScanStore();
   const { scan } = useScanner();
 
@@ -31,10 +31,28 @@ export default function Dashboard() {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const recheckAccess = () => {
+      if (document.visibilityState !== 'hidden') {
+        refreshFDA().catch(console.error);
+      }
+    };
+
+    window.addEventListener('focus', recheckAccess);
+    document.addEventListener('visibilitychange', recheckAccess);
+
+    return () => {
+      window.removeEventListener('focus', recheckAccess);
+      document.removeEventListener('visibilitychange', recheckAccess);
+    };
+  }, [refreshFDA]);
+
   // Show FDA modal on first load if not granted
   useEffect(() => {
     if (hasFDA === false) {
       setShowFDAModal(true);
+    } else if (hasFDA === true) {
+      setShowFDAModal(false);
     }
   }, [hasFDA]);
 
@@ -322,7 +340,11 @@ export default function Dashboard() {
       )}
 
       {/* FDA Modal */}
-      <FDAModal isOpen={showFDAModal} onDismiss={() => setShowFDAModal(false)} />
+      <FDAModal
+        isOpen={showFDAModal}
+        onDismiss={() => setShowFDAModal(false)}
+        onCheckAccess={refreshFDA}
+      />
     </motion.div>
   );
 }

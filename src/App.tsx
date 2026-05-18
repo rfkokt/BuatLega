@@ -1,26 +1,40 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Shell } from './components/layout/Shell';
-import Dashboard from './pages/Dashboard';
-import Scanner from './pages/Scanner';
-import Visualizer from './pages/Visualizer';
-import DevTools from './pages/DevTools';
-import LargeFiles from './pages/LargeFiles';
-import Settings from './pages/Settings';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Scanner = lazy(() => import('./pages/Scanner'));
+const Visualizer = lazy(() => import('./pages/Visualizer'));
+const DevTools = lazy(() => import('./pages/DevTools'));
+const LargeFiles = lazy(() => import('./pages/LargeFiles'));
+const Duplicates = lazy(() => import('./pages/Duplicates'));
+const Settings = lazy(() => import('./pages/Settings'));
+
+function RouteFallback() {
+  return (
+    <div className="h-full flex items-center justify-center">
+      <div className="h-8 w-8 rounded-full border-2 border-white/15 border-t-accent-secondary animate-spin" />
+    </div>
+  );
+}
 
 function AnimatedRoutes() {
   const location = useLocation();
 
   return (
     <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/scan" element={<Scanner />} />
-        <Route path="/visualize" element={<Visualizer />} />
-        <Route path="/dev-tools" element={<DevTools />} />
-        <Route path="/large-files" element={<LargeFiles />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes location={location} key={location.pathname}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/scan" element={<Scanner />} />
+          <Route path="/visualize" element={<Visualizer />} />
+          <Route path="/dev-tools" element={<DevTools />} />
+          <Route path="/large-files" element={<LargeFiles />} />
+          <Route path="/duplicates" element={<Duplicates />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </Suspense>
     </AnimatePresence>
   );
 }

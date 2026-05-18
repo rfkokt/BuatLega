@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Laptop,
@@ -6,22 +6,72 @@ import {
   HardDrives,
   Database,
   ArrowDown,
-  Trash
+  Trash,
 } from '@phosphor-icons/react';
+import { useAppInfo } from '../hooks/use-app-info';
 import { useDiskInfo } from '../hooks/use-disk-info';
-import { openSystemPreferences } from '../services/tauri';
-import { formatBytes } from '../lib/format';
+import {
+  clearCleanupHistory,
+  clearScanCache,
+  listCleanupHistory,
+  listIgnoredPaths,
+  openSystemPreferences,
+  removeIgnoredPath,
+} from '../services/tauri';
+import { formatBytes, formatRelativeTime } from '../lib/format';
+import type { CleanupHistoryEntry, IgnoredPath } from '../types';
 
 export default function Settings() {
+  const { appInfo } = useAppInfo();
   const { diskInfo, hasFDA, refresh } = useDiskInfo();
+  const [history, setHistory] = useState<CleanupHistoryEntry[]>([]);
+  const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPath[]>([]);
+  const [isClearingHistory, setIsClearingHistory] = useState(false);
+  const [isClearingScanCache, setIsClearingScanCache] = useState(false);
+
+  const refreshStorageMeta = useCallback(() => {
+    Promise.all([listCleanupHistory(), listIgnoredPaths()])
+      .then(([historyEntries, ignored]) => {
+        setHistory(historyEntries);
+        setIgnoredPaths(ignored);
+      })
+      .catch(console.error);
+  }, []);
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    refreshStorageMeta();
+  }, [refresh, refreshStorageMeta]);
+
+  const clearHistory = useCallback(async () => {
+    setIsClearingHistory(true);
+    try {
+      await clearCleanupHistory();
+      setHistory([]);
+    } finally {
+      setIsClearingHistory(false);
+    }
+  }, []);
+
+  const unignorePath = useCallback(async (path: string) => {
+    const ignored = await removeIgnoredPath(path);
+    setIgnoredPaths(ignored);
+  }, []);
+
+  const clearCachedScans = useCallback(async () => {
+    setIsClearingScanCache(true);
+    try {
+      await clearScanCache();
+    } finally {
+      setIsClearingScanCache(false);
+    }
+  }, []);
 
   const usagePercent = diskInfo 
     ? (diskInfo.used_space / diskInfo.total_capacity) * 100 
     : 0;
+  const historyTotal = history.reduce((total, item) => total + item.reclaimable_bytes, 0);
+  const buildProfileLabel = appInfo?.build_profile === 'debug' ? 'Debug build' : 'Release build';
 
   return (
     <motion.div
@@ -122,18 +172,31 @@ export default function Settings() {
               <InfoIcon size={14} />
             </button>
             <p className="text-xs text-white/60 font-medium mb-1">App Version</p>
-            <h2 className="text-2xl font-semibold text-white">v0.1.0</h2>
-            <p className="text-xs text-white/40 mt-1">Antigravity Core</p>
+            <h2 className="text-2xl font-semibold text-white">
+              {appInfo ? `v${appInfo.version}` : 'Loading...'}
+            </h2>
+            <p className="text-xs text-white/40 mt-1">
+              {appInfo ? `${appInfo.name} • ${buildProfileLabel}` : 'Reading bundle metadata'}
+            </p>
 
             <div className="mt-auto space-y-3">
               <p className="text-xs text-white/60 leading-relaxed">
-                Antigravity Storage Engine powered by React, Framer Motion, and Rust.
+                {appInfo
+                  ? `${appInfo.identifier} powered by React, Framer Motion, and Rust.`
+                  : 'Antigravity Storage Engine powered by React, Framer Motion, and Rust.'}
               </p>
               <button 
                 onClick={refresh}
                 className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/10 flex items-center justify-center gap-2"
               >
                 Refresh Data
+              </button>
+              <button
+                onClick={clearCachedScans}
+                disabled={isClearingScanCache}
+                className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm font-medium transition-colors border border-white/10 disabled:opacity-50"
+              >
+                Clear Scan Cache
               </button>
             </div>
           </div>
@@ -182,6 +245,113 @@ export default function Settings() {
             </div>
           </div>
 
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {/* Cleanup History */}
+        <div className="glass rounded-3xl p-6 border border-white/5">
+          <div className="flex items-start justify-between gap-4 mb-5">
+            <div>
+              <p className="text-xs text-white/60 font-medium mb-1">Cleanup History</p>
+              <h2 className="text-2xl font-semibold text-white">
+                {history.length > 0 ? formatBytes(historyTotal) : 'No Activity'}
+              </h2>
+              <p className="text-xs text-white/40 mt-1">
+                {history.length > 0
+                  ? `${history.length} cleanup sessions recorded`
+                  : 'Cleaned items will appear here'}
+              </p>
+            </div>
+
+            {history.length > 0 && (
+              <button
+                onClick={clearHistory}
+                disabled={isClearingHistory}
+                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-medium transition-colors border border-white/10 disabled:opacity-50"
+              >
+                Clear History
+              </button>
+            )}
+          </div>
+
+          {history.length > 0 ? (
+            <div className="space-y-2">
+              {history.slice(0, 6).map((entry) => {
+                const label = entry.trashed_bytes > 0 && entry.freed_bytes === 0
+                  ? `${formatBytes(entry.trashed_bytes)} moved to Trash`
+                  : `${formatBytes(entry.freed_bytes)} freed`;
+
+                return (
+                  <div
+                    key={`${entry.created_at}-${entry.items_count}`}
+                    className="flex items-center justify-between gap-4 rounded-2xl bg-white/5 border border-white/5 px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white truncate">
+                        {label}
+                      </p>
+                      <p className="text-xs text-white/45 mt-0.5">
+                        {entry.items_count} items · {entry.permanent ? 'Permanent' : 'Trash'} · {formatRelativeTime(entry.created_at)}
+                      </p>
+                    </div>
+                    {entry.failed_count > 0 && (
+                      <span className="shrink-0 text-xs text-[#FF9F0A]">
+                        {entry.failed_count} skipped
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-white/5 border border-white/5 px-4 py-5 text-sm text-white/45">
+              No cleanup history yet.
+            </div>
+          )}
+        </div>
+
+        {/* Ignored Paths */}
+        <div className="glass rounded-3xl p-6 border border-white/5">
+          <div className="mb-5">
+            <p className="text-xs text-white/60 font-medium mb-1">Ignored Paths</p>
+            <h2 className="text-2xl font-semibold text-white">
+              {ignoredPaths.length > 0 ? ignoredPaths.length : 'None'}
+            </h2>
+            <p className="text-xs text-white/40 mt-1">
+              Hidden from future scanner and large file results
+            </p>
+          </div>
+
+          {ignoredPaths.length > 0 ? (
+            <div className="space-y-2">
+              {ignoredPaths.slice(0, 6).map((entry) => (
+                <div
+                  key={entry.path}
+                  className="flex items-center justify-between gap-4 rounded-2xl bg-white/5 border border-white/5 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white truncate">
+                      {entry.path.replace(/^\/Users\/[^/]+\//, '~/')}
+                    </p>
+                    <p className="text-xs text-white/45 mt-0.5">
+                      {entry.reason || 'Ignored'} · {formatRelativeTime(entry.created_at)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => unignorePath(entry.path)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white/60 hover:text-white border border-white/10 transition-colors"
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-white/5 border border-white/5 px-4 py-5 text-sm text-white/45">
+              No ignored paths yet.
+            </div>
+          )}
+        </div>
         </div>
       </div>
     </motion.div>
