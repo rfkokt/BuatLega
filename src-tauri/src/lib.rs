@@ -11,6 +11,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .invoke_handler(tauri::generate_handler![
             commands::app_info::get_app_info,
+            commands::apps::list_installed_apps,
             commands::disk_info::get_disk_info,
             commands::disk_info::check_fda_status,
             commands::disk_info::open_system_preferences,
@@ -19,9 +20,12 @@ pub fn run() {
             commands::scan::cancel_scan,
             commands::scan::find_large_files,
             commands::scan::open_in_finder,
+            commands::cleanup::preview_cleanup_items,
             commands::cleanup::cleanup_items,
             commands::dev_tools::scan_dev_junk,
             commands::duplicates::find_duplicates,
+            commands::optimize::list_optimize_actions,
+            commands::optimize::run_optimize_actions,
             commands::persistence::list_ignored_paths,
             commands::persistence::add_ignored_path,
             commands::persistence::remove_ignored_path,
@@ -29,6 +33,7 @@ pub fn run() {
             commands::persistence::clear_cleanup_history,
             commands::persistence::get_cached_scan,
             commands::persistence::clear_scan_cache,
+            commands::status::get_system_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

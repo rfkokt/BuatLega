@@ -4,19 +4,27 @@ import type {
   AppInfo,
   CleanupHistoryEntry,
   CleanupResult,
+  CleanupPreview,
   DevJunkItem,
   DiskInfo,
   DuplicateGroup,
   DuplicateScanProgress,
   FileNode,
   IgnoredPath,
+  InstalledApp,
+  OptimizeAction,
+  OptimizeActionResult,
   ScanProgress,
   ScanResult,
+  SystemStatus,
 } from '../types';
 
 // ── App Info ──
 export const getAppInfo = () =>
   invoke<AppInfo>('get_app_info');
+
+export const listInstalledApps = () =>
+  invoke<InstalledApp[]>('list_installed_apps');
 
 // ── Disk Info ──
 export const getDiskInfo = () =>
@@ -47,6 +55,17 @@ export const findLargeFiles = (path: string, minSizeBytes: number) =>
 export const findDuplicates = (path: string, minSizeBytes?: number) =>
   invoke<DuplicateGroup[]>('find_duplicates', { path, minSizeBytes });
 
+// ── Optimize ──
+export const listOptimizeActions = () =>
+  invoke<OptimizeAction[]>('list_optimize_actions');
+
+export const runOptimizeActions = (actionIds: string[]) =>
+  invoke<OptimizeActionResult[]>('run_optimize_actions', { actionIds });
+
+// ── Status ──
+export const getSystemStatus = () =>
+  invoke<SystemStatus>('get_system_status');
+
 // ── Developer Tools ──
 export const scanDevJunk = () =>
   invoke<DevJunkItem[]>('scan_dev_junk');
@@ -54,6 +73,9 @@ export const scanDevJunk = () =>
 // ── Cleanup ──
 export const cleanupItems = (paths: string[], permanent: boolean = false) =>
   invoke<CleanupResult>('cleanup_items', { paths, permanent });
+
+export const previewCleanupItems = (paths: string[]) =>
+  invoke<CleanupPreview>('preview_cleanup_items', { paths });
 
 // ── Persistence ──
 export const listIgnoredPaths = () =>

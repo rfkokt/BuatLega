@@ -6,7 +6,8 @@ pub fn categorize_path(path: &Path, name: &str) -> FileCategory {
     // By directory name (developer junk)
     match name {
         "node_modules" | "DerivedData" | ".gradle" | "__pycache__"
-        | "target" | "dist" | "build" | ".next" | ".nuxt" => {
+        | "target" | "dist" | "build" | ".next" | ".nuxt"
+        | ".turbo" | ".dart_tool" => {
             return FileCategory::DevCache;
         }
         "Caches" => return FileCategory::Cache,

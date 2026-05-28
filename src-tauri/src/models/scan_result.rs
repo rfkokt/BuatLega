@@ -50,6 +50,22 @@ pub struct CleanupError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupPreviewItem {
+    pub path: String,
+    pub size: u64,
+    pub status: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupPreview {
+    pub items: Vec<CleanupPreviewItem>,
+    pub cleanable_count: u64,
+    pub skipped_count: u64,
+    pub total_reclaimable_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IgnoredPath {
     pub path: String,
     pub reason: Option<String>,

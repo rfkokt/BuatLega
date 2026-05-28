@@ -9,6 +9,9 @@ const Visualizer = lazy(() => import('./pages/Visualizer'));
 const DevTools = lazy(() => import('./pages/DevTools'));
 const LargeFiles = lazy(() => import('./pages/LargeFiles'));
 const Duplicates = lazy(() => import('./pages/Duplicates'));
+const Apps = lazy(() => import('./pages/Apps'));
+const Optimize = lazy(() => import('./pages/Optimize'));
+const Status = lazy(() => import('./pages/Status'));
 const Settings = lazy(() => import('./pages/Settings'));
 
 function RouteFallback() {
@@ -32,6 +35,9 @@ function AnimatedRoutes() {
           <Route path="/dev-tools" element={<DevTools />} />
           <Route path="/large-files" element={<LargeFiles />} />
           <Route path="/duplicates" element={<Duplicates />} />
+          <Route path="/apps" element={<Apps />} />
+          <Route path="/optimize" element={<Optimize />} />
+          <Route path="/status" element={<Status />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Suspense>

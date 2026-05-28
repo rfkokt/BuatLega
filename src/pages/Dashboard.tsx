@@ -115,229 +115,263 @@ export default function Dashboard() {
         <FDABanner onOpenSettings={() => setShowFDAModal(true)} />
       )}
 
-      {/* Disk Usage Card */}
-      {diskInfo && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <TiltCard className="glass p-6 text-left w-full block">
-          <div className="flex items-center gap-4 mb-5">
-            <div className="p-2.5 rounded-full bg-white/5 border border-white/10">
-              <HardDrives size={24} weight="duotone" className="text-white/80" />
-            </div>
-            <div>
-              <h2 className="text-base font-medium text-white">Storage</h2>
-              <p className="text-xs text-white/60">
-                {formatBytes(diskInfo.used_space)} of {formatBytes(diskInfo.total_capacity)} used
-              </p>
-            </div>
-            <span
-              className="ml-auto text-2xl font-semibold"
-              style={{ color: usageColor }}
+      {/* Bento Layout Grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        
+        {/* Main Column (Spans 2 columns on large screens) */}
+        <div className="xl:col-span-2 space-y-6 flex flex-col">
+          {/* Disk Usage Card */}
+          {diskInfo && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: 0.1, duration: 0.4, type: "spring" }}
             >
-              {formatPercent(diskInfo.used_space, diskInfo.total_capacity)}
-            </span>
-          </div>
-
-          {/* Usage bar */}
-          <div className="w-full h-3 bg-bg-secondary rounded-full overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${usagePercent}%` }}
-              transition={{ duration: 1, ease: 'easeOut' }}
-              className="h-full rounded-full"
-              style={{
-                background: `linear-gradient(90deg, ${usageColor}cc, ${usageColor})`,
-              }}
-            />
-          </div>
-
-          <div className="flex justify-between mt-2 text-xs text-text-muted">
-            <span>{formatBytes(diskInfo.used_space)} used</span>
-            <span>{formatBytes(diskInfo.available_space)} available</span>
-          </div>
-          </TiltCard>
-        </motion.div>
-      )}
-
-      {/* Disk Info loading skeleton */}
-      {!diskInfo && isLoading && (
-        <div className="glass p-6 animate-pulse">
-          <div className="h-6 w-32 bg-white/5 rounded mb-4" />
-          <div className="h-3 w-full bg-white/5 rounded-full" />
-        </div>
-      )}
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <button onClick={() => { navigate('/scan'); handleQuickScan(); }} className="w-full text-left glass p-4 flex items-center gap-4 group block transition-transform hover:scale-[1.02]">
-              <div className="p-2.5 rounded-full bg-white/5 border border-white/10 group-hover:bg-[#0D9488]/20 group-hover:border-[#0D9488]/40 transition-all">
-                <Lightning size={20} weight="duotone" className="text-white/70 group-hover:text-[#0D9488] transition-colors" />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-white group-hover:text-[#0D9488] transition-colors">Quick Scan</h3>
-                <p className="text-xs text-white/50">Scan home directory</p>
-              </div>
-            </button>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-            <button onClick={() => navigate('/dev-tools')} className="w-full text-left glass p-4 flex items-center gap-4 group block transition-transform hover:scale-[1.02]">
-              <div className="p-2.5 rounded-full bg-white/5 border border-white/10 group-hover:bg-[#FF9F0A]/20 group-hover:border-[#FF9F0A]/40 transition-all">
-                <Wrench size={20} weight="duotone" className="text-white/70 group-hover:text-[#FF9F0A] transition-colors" />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-white group-hover:text-[#FF9F0A] transition-colors">Dev Cleanup</h3>
-                <p className="text-xs text-white/50">node_modules, Xcode, Docker</p>
-              </div>
-            </button>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-            <button onClick={() => navigate('/large-files')} className="w-full text-left glass p-4 flex items-center gap-4 group block transition-transform hover:scale-[1.02]">
-              <div className="p-2.5 rounded-full bg-white/5 border border-white/10 group-hover:bg-[#BF5AF2]/20 group-hover:border-[#BF5AF2]/40 transition-all">
-                <FileMagnifyingGlass size={20} weight="duotone" className="text-white/70 group-hover:text-[#BF5AF2] transition-colors" />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-white group-hover:text-[#BF5AF2] transition-colors">Large Files</h3>
-                <p className="text-xs text-white/50">Find files &gt; 100MB</p>
-              </div>
-            </button>
-          </motion.div>
-        </div>
-
-      {/* Scanning progress */}
-      <AnimatePresence>
-        {isScanning && progress && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="glass rounded-2xl p-6 overflow-hidden"
-          >
-            <div className="flex items-center gap-6">
-              {/* GSAP 3D Animation */}
-              <GSAPScanner3D />
-              
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-white">
-                    Scanning Storage...
-                  </span>
-                  <span className="text-sm font-medium text-[#00F0FF]">
-                    {progress.scanned.toLocaleString()} files
-                  </span>
+              <TiltCard className="glass p-8 text-left w-full block relative overflow-hidden group">
+                <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="flex items-center gap-5 mb-8 relative z-10">
+                  <div className="p-3.5 rounded-2xl bg-white/10 border border-white/20 shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+                    <HardDrives size={28} weight="duotone" className="text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-white tracking-tight">System Storage</h2>
+                    <p className="text-sm text-white/60 mt-0.5">
+                      Macintosh HD
+                    </p>
+                  </div>
+                  <div className="ml-auto flex flex-col items-end">
+                    <span
+                      className="text-3xl font-bold tracking-tight"
+                      style={{ color: usageColor }}
+                    >
+                      {formatPercent(diskInfo.used_space, diskInfo.total_capacity)}
+                    </span>
+                    <span className="text-xs text-white/40 uppercase tracking-wider font-semibold mt-1">Used</span>
+                  </div>
                 </div>
-                
-                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden mb-2">
+
+                {/* Layered Usage bar */}
+                <div className="relative w-full h-4 bg-black/40 rounded-full overflow-hidden border border-white/5 shadow-inner">
+                  {/* Subtle grid/stripe background inside the track */}
+                  <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px)' }} />
+                  
                   <motion.div
-                    className="h-full bg-gradient-to-r from-[#0D9488] to-[#00F0FF]"
-                    animate={{ width: ['0%', '100%'] }}
-                    transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                  />
+                    initial={{ width: 0 }}
+                    animate={{ width: `${usagePercent}%` }}
+                    transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute top-0 left-0 h-full rounded-full shadow-[0_0_15px_rgba(0,0,0,0.3)] overflow-hidden"
+                    style={{
+                      background: `linear-gradient(90deg, ${usageColor}aa, ${usageColor})`,
+                    }}
+                  >
+                     {/* Inner shine */}
+                     <div className="absolute top-0 left-0 right-0 h-1/2 bg-white/20 rounded-full" />
+                  </motion.div>
                 </div>
-                
-                <p className="text-xs text-white/40 truncate">
-                  {progress.current_path}
-                </p>
+
+                <div className="flex justify-between mt-4 text-sm font-medium relative z-10">
+                  <span className="text-white/80 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: usageColor }} />
+                    {formatBytes(diskInfo.used_space)} used
+                  </span>
+                  <span className="text-white/60">{formatBytes(diskInfo.available_space)} available</span>
+                </div>
+              </TiltCard>
+            </motion.div>
+          )}
+
+          {/* Disk Info loading skeleton */}
+          {!diskInfo && isLoading && (
+            <div className="glass p-8 animate-pulse rounded-[24px]">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="h-14 w-14 bg-white/5 rounded-2xl" />
+                <div>
+                   <div className="h-6 w-32 bg-white/10 rounded mb-2" />
+                   <div className="h-4 w-20 bg-white/5 rounded" />
+                </div>
+              </div>
+              <div className="h-4 w-full bg-white/5 rounded-full mb-4" />
+              <div className="flex justify-between">
+                <div className="h-4 w-24 bg-white/5 rounded" />
+                <div className="h-4 w-24 bg-white/5 rounded" />
               </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
 
-      {/* Category Breakdown (F-010) */}
-      {scanResult && !isScanning && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <CategoryChart
-            categories={computedCategories}
-            totalSize={scanResult.total_size}
-            onCategoryClick={() => {
-              navigate('/scan');
-            }}
-          />
-        </motion.div>
-      )}
+          {/* Scanning progress */}
+          <AnimatePresence>
+            {isScanning && progress && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, scale: 0.95 }}
+                animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                exit={{ opacity: 0, height: 0, scale: 0.95 }}
+                transition={{ type: "spring", bounce: 0, duration: 0.5 }}
+                className="glass rounded-[24px] p-6 overflow-hidden relative"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-[#0D9488]/10 to-[#00F0FF]/10 animate-pulse" />
+                <div className="flex items-center gap-6 relative z-10">
+                  <GSAPScanner3D />
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-base font-semibold text-white tracking-wide">
+                        Scanning Storage...
+                      </span>
+                      <span className="text-sm font-bold text-[#00F0FF] bg-[#00F0FF]/10 px-3 py-1 rounded-full border border-[#00F0FF]/20">
+                        {progress.scanned.toLocaleString()} files
+                      </span>
+                    </div>
+                    
+                    <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden mb-3 border border-white/5 shadow-inner">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-[#0D9488] via-[#00F0FF] to-[#0D9488] bg-[length:200%_100%]"
+                        animate={{ backgroundPosition: ['200% 0', '-200% 0'] }}
+                        transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+                      />
+                    </div>
+                    
+                    <p className="text-xs text-white/50 truncate font-mono">
+                      {progress.current_path}
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-      {/* Scan stats */}
-      {scanResult && !isScanning && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="grid grid-cols-4 gap-3"
-        >
-          {[
-            { label: 'Total Scanned', value: formatBytes(scanResult.total_size), color: '#6366f1' },
-            { label: 'Files', value: scanResult.file_count.toLocaleString(), color: '#8b5cf6' },
-            { label: 'Directories', value: scanResult.dir_count.toLocaleString(), color: '#ec4899' },
-            { label: 'Scan Time', value: `${(scanResult.scan_duration_ms / 1000).toFixed(1)}s`, color: '#22c55e' },
-          ].map(({ label, value, color }, i) => (
+          {/* Category Breakdown */}
+          {scanResult && !isScanning && (
             <motion.div
-              key={label}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25 + i * 0.05 }}
-              className="glass rounded-2xl p-4"
+              transition={{ delay: 0.2 }}
             >
-              <p className="text-xs text-white/50">{label}</p>
-              <p className="text-lg font-bold mt-1" style={{ color }}>{value}</p>
+              <CategoryChart
+                categories={computedCategories}
+                totalSize={scanResult.total_size}
+                onCategoryClick={() => navigate('/scan')}
+              />
             </motion.div>
-          ))}
-        </motion.div>
-      )}
-
-      {/* Quick navigation cards */}
-      {scanResult && !isScanning && (
-        <div className="grid grid-cols-2 gap-4">
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            whileHover={{ scale: 1.01 }}
-            onClick={() => navigate('/visualize')}
-            className="glass rounded-2xl p-5 text-left hover:border-[#BF5AF2]/30 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <ChartDonut size={20} weight="duotone" className="text-[#BF5AF2]" />
-                <span className="text-sm font-medium text-white">View Treemap</span>
-              </div>
-              <ArrowRight size={16} className="text-white/40 group-hover:text-white transition-colors" />
-            </div>
-            <p className="text-xs text-white/50 mt-2">
-              Interactive visualization of disk usage
-            </p>
-          </motion.button>
-
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.35 }}
-            whileHover={{ scale: 1.01 }}
-            onClick={() => navigate('/scan')}
-            className="glass rounded-2xl p-5 text-left hover:border-[#0D9488]/30 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <FileMagnifyingGlass size={20} weight="duotone" className="text-[#0D9488]" />
-                <span className="text-sm font-medium text-white">Browse Results</span>
-              </div>
-              <ArrowRight size={16} className="text-white/40 group-hover:text-white transition-colors" />
-            </div>
-            <p className="text-xs text-white/50 mt-2">
-              Sort, filter, and manage scanned files
-            </p>
-          </motion.button>
+          )}
+          
+          {/* Scan stats */}
+          {scanResult && !isScanning && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="grid grid-cols-2 sm:grid-cols-4 gap-4"
+            >
+              {[
+                { label: 'Total Scanned', value: formatBytes(scanResult.total_size), color: '#00F0FF' },
+                { label: 'Files', value: scanResult.file_count.toLocaleString(), color: '#BF5AF2' },
+                { label: 'Directories', value: scanResult.dir_count.toLocaleString(), color: '#FF2E93' },
+                { label: 'Scan Time', value: `${(scanResult.scan_duration_ms / 1000).toFixed(1)}s`, color: '#32D74B' },
+              ].map(({ label, value, color }, i) => (
+                <motion.div
+                  key={label}
+                  initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ delay: 0.35 + i * 0.05, type: "spring" }}
+                  className="glass rounded-[20px] p-5 relative overflow-hidden group flex flex-col justify-center"
+                >
+                  <div className="absolute -inset-2 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <p className="text-xs text-white/50 font-medium uppercase tracking-wider mb-1 relative z-10">{label}</p>
+                  <p className="text-xl font-bold tracking-tight relative z-10" style={{ color }}>{value}</p>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
         </div>
-      )}
+
+        {/* Sidebar Column */}
+        <div className="xl:col-span-1 space-y-4 flex flex-col">
+          {/* Quick Actions Stack */}
+          <motion.div
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.15 }}
+            className="flex flex-col gap-4"
+          >
+            <h3 className="text-sm font-semibold text-white/80 uppercase tracking-widest ml-2 mb-1">Quick Actions</h3>
+            
+            <button onClick={() => { navigate('/scan'); handleQuickScan(); }} className="w-full text-left glass p-5 flex items-center gap-5 group transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(13,148,136,0.2)] hover:border-[#0D9488]/40 overflow-hidden relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-[#0D9488]/0 via-[#0D9488]/5 to-[#0D9488]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 group-hover:bg-[#0D9488]/20 group-hover:border-[#0D9488]/50 group-hover:shadow-[0_0_15px_rgba(13,148,136,0.5)] transition-all duration-300 relative z-10">
+                <Lightning size={24} weight="duotone" className="text-white/70 group-hover:text-[#00F0FF] transition-colors" />
+              </div>
+              <div className="relative z-10">
+                <h3 className="text-base font-semibold text-white group-hover:text-[#00F0FF] transition-colors">Smart Scan</h3>
+                <p className="text-xs text-white/50 mt-0.5">Quickly find junk & caches</p>
+              </div>
+            </button>
+
+            <button onClick={() => navigate('/dev-tools')} className="w-full text-left glass p-5 flex items-center gap-5 group transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(255,159,10,0.2)] hover:border-[#FF9F0A]/40 overflow-hidden relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-[#FF9F0A]/0 via-[#FF9F0A]/5 to-[#FF9F0A]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 group-hover:bg-[#FF9F0A]/20 group-hover:border-[#FF9F0A]/50 group-hover:shadow-[0_0_15px_rgba(255,159,10,0.5)] transition-all duration-300 relative z-10">
+                <Wrench size={24} weight="duotone" className="text-white/70 group-hover:text-[#FF9F0A] transition-colors" />
+              </div>
+              <div className="relative z-10">
+                <h3 className="text-base font-semibold text-white group-hover:text-[#FF9F0A] transition-colors">Dev Cleanup</h3>
+                <p className="text-xs text-white/50 mt-0.5">Clear node_modules & builds</p>
+              </div>
+            </button>
+
+            <button onClick={() => navigate('/large-files')} className="w-full text-left glass p-5 flex items-center gap-5 group transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(191,90,242,0.2)] hover:border-[#BF5AF2]/40 overflow-hidden relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-[#BF5AF2]/0 via-[#BF5AF2]/5 to-[#BF5AF2]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 group-hover:bg-[#BF5AF2]/20 group-hover:border-[#BF5AF2]/50 group-hover:shadow-[0_0_15px_rgba(191,90,242,0.5)] transition-all duration-300 relative z-10">
+                <FileMagnifyingGlass size={24} weight="duotone" className="text-white/70 group-hover:text-[#BF5AF2] transition-colors" />
+              </div>
+              <div className="relative z-10">
+                <h3 className="text-base font-semibold text-white group-hover:text-[#BF5AF2] transition-colors">Large Files</h3>
+                <p className="text-xs text-white/50 mt-0.5">Find space hoggers &gt; 100MB</p>
+              </div>
+            </button>
+          </motion.div>
+
+          {/* Quick navigation cards (Analysis results) */}
+          {scanResult && !isScanning && (
+            <motion.div
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.4 }}
+              className="flex flex-col gap-4 mt-2"
+            >
+              <h3 className="text-sm font-semibold text-white/80 uppercase tracking-widest ml-2 mb-1 mt-4">Analysis Results</h3>
+              
+              <button
+                onClick={() => navigate('/visualize')}
+                className="w-full text-left glass p-5 group transition-all duration-300 hover:scale-[1.02] hover:border-[#00F0FF]/40 hover:shadow-[0_8px_30px_rgba(0,240,255,0.15)] relative overflow-hidden"
+              >
+                <div className="flex items-center justify-between relative z-10">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-[#00F0FF]/10 text-[#00F0FF] group-hover:bg-[#00F0FF]/20 transition-colors">
+                       <ChartDonut size={20} weight="duotone" />
+                    </div>
+                    <span className="text-sm font-semibold text-white group-hover:text-[#00F0FF] transition-colors">View Treemap</span>
+                  </div>
+                  <ArrowRight size={18} className="text-white/30 group-hover:text-[#00F0FF] group-hover:translate-x-1 transition-all" />
+                </div>
+              </button>
+
+              <button
+                onClick={() => navigate('/scan')}
+                className="w-full text-left glass p-5 group transition-all duration-300 hover:scale-[1.02] hover:border-[#FF2E93]/40 hover:shadow-[0_8px_30px_rgba(255,46,147,0.15)] relative overflow-hidden"
+              >
+                <div className="flex items-center justify-between relative z-10">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-[#FF2E93]/10 text-[#FF2E93] group-hover:bg-[#FF2E93]/20 transition-colors">
+                       <FileMagnifyingGlass size={20} weight="duotone" />
+                    </div>
+                    <span className="text-sm font-semibold text-white group-hover:text-[#FF2E93] transition-colors">Browse Files</span>
+                  </div>
+                  <ArrowRight size={18} className="text-white/30 group-hover:text-[#FF2E93] group-hover:translate-x-1 transition-all" />
+                </div>
+              </button>
+            </motion.div>
+          )}
+        </div>
+      </div>
 
       {/* FDA Modal */}
       <FDAModal

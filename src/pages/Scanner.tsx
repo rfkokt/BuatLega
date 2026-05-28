@@ -422,9 +422,9 @@ export default function Scanner() {
         isOpen={showConfirm}
         items={selectedItemsList}
         totalSize={totalSelectedSize}
-        onConfirm={(permanent) => {
+        onConfirm={(permanent, cleanablePaths) => {
           setShowConfirm(false);
-          useCleanupStore.getState().startCleanup(Array.from(selectedPaths), permanent);
+          useCleanupStore.getState().startCleanup(cleanablePaths ?? Array.from(selectedPaths), permanent);
         }}
         onCancel={() => setShowConfirm(false)}
       />

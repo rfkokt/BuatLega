@@ -1,7 +1,10 @@
 pub mod app_info;
+pub mod apps;
 pub mod cleanup;
 pub mod dev_tools;
 pub mod disk_info;
 pub mod duplicates;
+pub mod optimize;
 pub mod persistence;
 pub mod scan;
+pub mod status;

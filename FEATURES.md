@@ -82,6 +82,7 @@ Each feature has:
 - **Acceptance Criteria**:
   - [x] Multi-select items via checkboxes
   - [x] "Select all safe (🟢)" quick action
+  - [x] Preflight cleanup preview validates protected paths, missing paths, and nested selections before execution
   - [x] Confirmation dialog showing: item count, total size to free
   - [x] 🔴 items require typing "DELETE" to confirm (extra safety)
   - [x] Uses `trash` crate (never permanent delete)
@@ -149,6 +150,10 @@ Each feature has:
 - **Depends On**: F-002, F-004
 - **Acceptance Criteria**:
   - [x] Scans all known dev junk paths (see TECHNICAL.md §9)
+  - [x] Includes Mole-inspired high-impact caches: npm, pnpm, Yarn, Bun, Corepack, uv, pip, conda, Maven, Go, Cargo, Gradle, Homebrew
+  - [x] Detects project build artifacts: node_modules, .next, .turbo, __pycache__, .dart_tool, target, build, dist
+  - [x] Includes safe generated app data inspired by Mole: browser caches, editor caches, chat app caches, AI app caches, logs, diagnostics, and saved app states
+  - [x] Broad user cache entries are surfaced as review items until whitelist/protection rules are stronger
   - [x] Groups results by DevJunkType
   - [x] Shows per-group totals (e.g., "node_modules: 15.3 GB across 42 projects")
   - [x] Shows project name for each item (parsed from parent directory)
@@ -207,7 +212,7 @@ Each feature has:
   - [ ] Exclude system files from duplicate search
 
 ### F-012: App Uninstaller
-- **Status**: `planned`
+- **Status**: `in-progress`
 - **Priority**: `P2`
 - **Description**: List all installed apps with their "true" size (app + support files + caches + preferences). Deep uninstall removes all related files.
 - **Touches**:
@@ -215,11 +220,12 @@ Each feature has:
   - Frontend: `pages/Apps.tsx` (new), `components/cleanup/AppCard.tsx`
 - **Depends On**: F-004
 - **Acceptance Criteria**:
-  - [ ] Lists all apps from /Applications
-  - [ ] Shows "true" size (bundle + ~/Library/Application Support/X + ~/Library/Caches/X + ~/Library/Preferences/X.plist)
-  - [ ] Sort by total size
-  - [ ] Uninstall button with confirmation showing all files to be removed
-  - [ ] Move all related files to Trash (not just the .app)
+  - [x] Lists all apps from /Applications
+  - [x] Shows "true" size (bundle + ~/Library/Application Support/X + ~/Library/Caches/X + ~/Library/Preferences/X.plist)
+  - [x] Sort by total size
+  - [x] Uninstall button with confirmation showing all files to be removed
+  - [x] Move all related files to Trash (not just the .app)
+  - [ ] Broaden leftover detection with LaunchAgents, privileged helpers, cookies, crash reports, and vendor-specific rules
 
 ### F-013: Menu Bar Widget
 - **Status**: `planned`
@@ -277,6 +283,37 @@ Each feature has:
 - **Touches**: TBD
 - **Depends On**: F-002, F-009
 - **Acceptance Criteria**: TBD
+
+### F-018: System Optimize
+- **Status**: `done`
+- **Priority**: `P1`
+- **Description**: Mole-inspired safe maintenance actions that refresh macOS caches, services, and UI state without sudo.
+- **Touches**:
+  - Rust: `commands/optimize.rs`
+  - Frontend: `pages/Optimize.tsx`, `services/tauri.ts`, `components/layout/Sidebar.tsx`
+- **Depends On**: F-005
+- **Acceptance Criteria**:
+  - [x] Lists available optimization actions with descriptions
+  - [x] Runs selected actions only after explicit user selection
+  - [x] Supports Quick Look cache reset, Launch Services rebuild, DNS cache flush, Finder restart, Dock restart, and SystemUIServer restart
+  - [x] Shows per-action success/failure results
+  - [x] Avoids sudo/elevated commands in the initial version
+
+### F-019: System Status
+- **Status**: `done`
+- **Priority**: `P1`
+- **Description**: Mole-inspired live system status dashboard for health, load, memory, disk, battery, uptime, and top processes.
+- **Touches**:
+  - Rust: `commands/status.rs`
+  - Frontend: `pages/Status.tsx`, `services/tauri.ts`, `components/layout/Sidebar.tsx`
+- **Depends On**: F-005
+- **Acceptance Criteria**:
+  - [x] Shows health score and health label
+  - [x] Shows CPU load average and uptime
+  - [x] Shows memory usage and disk usage
+  - [x] Shows battery status when available
+  - [x] Lists top processes by CPU
+  - [x] Refreshes automatically and manually
 
 ---
 

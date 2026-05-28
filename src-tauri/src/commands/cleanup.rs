@@ -1,5 +1,7 @@
 use crate::commands::persistence::{clear_scan_cache_entries, record_cleanup_history};
-use crate::models::{CleanupError, CleanupHistoryEntry, CleanupResult};
+use crate::models::{
+    CleanupError, CleanupHistoryEntry, CleanupPreview, CleanupPreviewItem, CleanupResult,
+};
 use crate::storage::allocated_size;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,6 +43,41 @@ fn is_protected(path: &Path) -> bool {
             return true;
         }
     }
+
+    let path_str = path.to_string_lossy();
+    let protected_fragments = [
+        "/Library/Keychains",
+        "/Library/Cookies",
+        "/Library/Safari",
+        "/Library/Mail",
+        "/Library/Messages",
+        "/Library/Preferences",
+        "/Library/Application Support/com.apple.TCC",
+    ];
+    if protected_fragments
+        .iter()
+        .any(|fragment| path_str.contains(fragment))
+    {
+        return true;
+    }
+
+    let lower_path = path_str.to_lowercase();
+    let protected_file_names = [
+        "/cookies",
+        "/cookies-journal",
+        "/history",
+        "/history-journal",
+        "/login data",
+        "/login data-journal",
+        "/keychain",
+    ];
+    if protected_file_names
+        .iter()
+        .any(|fragment| lower_path.ends_with(fragment))
+    {
+        return true;
+    }
+
     // Never delete top-level dirs on root or volumes
     if let Some(parent) = path.parent() {
         let parent_str = parent.to_string_lossy();
@@ -67,6 +104,95 @@ fn is_protected(path: &Path) -> bool {
         }
     }
     false
+}
+
+fn target_preview_item(target: &CleanupTarget) -> CleanupPreviewItem {
+    CleanupPreviewItem {
+        path: target.original.clone(),
+        size: target.size,
+        status: "cleanable".to_string(),
+        reason: None,
+    }
+}
+
+fn error_preview_item(error: CleanupError) -> CleanupPreviewItem {
+    CleanupPreviewItem {
+        path: error.path,
+        size: 0,
+        status: "skipped".to_string(),
+        reason: Some(error.reason),
+    }
+}
+
+fn split_nested_targets(mut targets: Vec<CleanupTarget>) -> (Vec<CleanupTarget>, Vec<CleanupPreviewItem>) {
+    targets.sort_by_key(|target| target.path.components().count());
+    let mut kept: Vec<CleanupTarget> = Vec::new();
+    let mut skipped = Vec::new();
+
+    'targets: for target in targets {
+        for existing in &kept {
+            if target.path.starts_with(&existing.path) {
+                skipped.push(CleanupPreviewItem {
+                    path: target.original,
+                    size: target.size,
+                    status: "skipped".to_string(),
+                    reason: Some(format!("Nested under {}", existing.original)),
+                });
+                continue 'targets;
+            }
+        }
+        kept.push(target);
+    }
+
+    (kept, skipped)
+}
+
+#[tauri::command]
+pub async fn preview_cleanup_items(paths: Vec<String>) -> Result<CleanupPreview, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut targets = Vec::new();
+        let mut items = Vec::new();
+
+        for path_str in &paths {
+            match prepare_target(path_str) {
+                Ok(Some(target)) => targets.push(target),
+                Ok(None) => items.push(CleanupPreviewItem {
+                    path: path_str.clone(),
+                    size: 0,
+                    status: "skipped".to_string(),
+                    reason: Some("Path does not exist".to_string()),
+                }),
+                Err(error) => items.push(error_preview_item(error)),
+            }
+        }
+
+        let (targets, nested_skipped) = split_nested_targets(targets);
+        items.extend(nested_skipped);
+        items.extend(targets.iter().map(target_preview_item));
+
+        let cleanable_count = items
+            .iter()
+            .filter(|item| item.status == "cleanable")
+            .count() as u64;
+        let skipped_count = items
+            .iter()
+            .filter(|item| item.status != "cleanable")
+            .count() as u64;
+        let total_reclaimable_bytes = items
+            .iter()
+            .filter(|item| item.status == "cleanable")
+            .map(|item| item.size)
+            .sum();
+
+        Ok(CleanupPreview {
+            items,
+            cleanable_count,
+            skipped_count,
+            total_reclaimable_bytes,
+        })
+    })
+    .await
+    .map_err(|e| format!("Cleanup preview task failed: {}", e))?
 }
 
 fn prepare_target(path_str: &str) -> Result<Option<CleanupTarget>, CleanupError> {

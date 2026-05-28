@@ -474,8 +474,8 @@ export default function LargeFiles() {
         isOpen={showConfirm}
         items={selectedItems}
         totalSize={selectedSize}
-        onConfirm={async (permanent) => {
-          const paths = Array.from(selectedPaths);
+        onConfirm={async (permanent, cleanablePaths) => {
+          const paths = cleanablePaths ?? Array.from(selectedPaths);
           setShowConfirm(false);
           setSelectedPaths(new Set());
           await useCleanupStore.getState().startCleanup(paths, permanent);
