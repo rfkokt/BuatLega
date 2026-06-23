@@ -6,16 +6,19 @@ import {
   Trash,
   Spinner,
   Lightning,
+  CheckCircle,
   CaretDown,
   FunnelSimple,
   Clock,
+  Eye,
   EyeSlash,
   FileMagnifyingGlass,
+  ArrowCounterClockwise,
 } from '@phosphor-icons/react';
 import { useLargeFiles } from '../hooks/use-large-files';
 import { useCleanupStore } from '../stores/cleanup-store';
 import { ConfirmDialog } from '../components/cleanup/ConfirmDialog';
-import { addIgnoredPath, listIgnoredPaths, openInFinder } from '../services/tauri';
+import { addIgnoredPath, listIgnoredPaths, openInFinder, removeIgnoredPath } from '../services/tauri';
 import { formatBytes, formatRelativeTime, getCategoryColor } from '../lib/format';
 import type { FileNode, IgnoredPath } from '../types';
 
@@ -26,6 +29,7 @@ export default function LargeFiles() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showThresholdMenu, setShowThresholdMenu] = useState(false);
   const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPath[]>([]);
+  const [showIgnored, setShowIgnored] = useState(false);
 
   useEffect(() => {
     if (files.length === 0) handleScan();
@@ -42,6 +46,16 @@ export default function LargeFiles() {
   }, [ignoredPaths]);
 
   const visibleFiles = useMemo(() => files.filter((file) => !isIgnored(file.path)), [files, isIgnored]);
+  const safeFiles = useMemo(() => {
+    return visibleFiles.filter((file) => file.safety_level === 'Safe');
+  }, [visibleFiles]);
+  const ignoredFiles = useMemo(() => {
+    const byPath = new Map(files.map((file) => [file.path, file]));
+    return ignoredPaths.map((entry) => ({
+      entry,
+      file: byPath.get(entry.path),
+    }));
+  }, [files, ignoredPaths]);
 
   const scanWithThreshold = useCallback(async (minSizeBytes: number) => {
     setSelectedPaths(new Set());
@@ -65,6 +79,10 @@ export default function LargeFiles() {
     });
   }, []);
 
+  const selectSafe = useCallback(() => {
+    setSelectedPaths(new Set(safeFiles.map((file) => file.path)));
+  }, [safeFiles]);
+
   const handleIgnore = useCallback(async (path: string) => {
     const ignored = await addIgnoredPath(path, 'Ignored from Large Files');
     setIgnoredPaths(ignored);
@@ -74,6 +92,23 @@ export default function LargeFiles() {
       return next;
     });
   }, []);
+
+  const handleUnignore = useCallback(async (path: string) => {
+    const ignored = await removeIgnoredPath(path);
+    setIgnoredPaths(ignored);
+    setShowIgnored(false);
+    handleScan();
+  }, [handleScan]);
+
+  const handleUnignoreAll = useCallback(async () => {
+    let ignored = ignoredPaths;
+    for (const entry of ignoredPaths) {
+      ignored = await removeIgnoredPath(entry.path);
+    }
+    setIgnoredPaths(ignored);
+    setShowIgnored(false);
+    handleScan();
+  }, [handleScan, ignoredPaths]);
 
   const selectedItems: FileNode[] = visibleFiles.filter((f) => selectedPaths.has(f.path));
   const selectedSize = selectedItems.reduce((a, i) => a + i.size, 0);
@@ -105,6 +140,17 @@ export default function LargeFiles() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {!showIgnored && safeFiles.length > 0 && (
+            <button
+              onClick={selectSafe}
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium text-accent-secondary bg-accent-secondary/10 hover:bg-accent-secondary/20 transition-all border border-accent-secondary/20"
+              title={`Select ${safeFiles.length} safe files`}
+            >
+              <CheckCircle size={14} />
+              Select Safe ({safeFiles.length})
+            </button>
+          )}
+
           {selectedPaths.size > 0 && (
             <>
               <button
@@ -121,6 +167,22 @@ export default function LargeFiles() {
                 Clean {formatBytes(selectedSize)}
               </button>
             </>
+          )}
+
+          {/* Threshold selector */}
+          {ignoredPaths.length > 0 && (
+            <button
+              onClick={() => setShowIgnored((value) => !value)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium border transition-all ${
+                showIgnored
+                  ? 'text-[#FF9F0A] bg-[#FF9F0A]/10 border-[#FF9F0A]/30'
+                  : 'text-white/70 bg-white/5 hover:bg-white/10 border-white/10'
+              }`}
+              title={showIgnored ? 'Show large files' : 'Show hidden paths'}
+            >
+              {showIgnored ? <Eye size={14} /> : <EyeSlash size={14} />}
+              Hidden ({ignoredPaths.length})
+            </button>
           )}
 
           {/* Threshold selector */}
@@ -247,7 +309,92 @@ export default function LargeFiles() {
       )}
 
       {/* Results */}
-      {!isScanning && visibleFiles.length > 0 && (
+      {!isScanning && showIgnored && (
+        <div className="glass rounded-3xl overflow-hidden border border-white/5 mt-6">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-white/5 border-b border-white/5">
+            <div className="flex flex-1 items-center gap-3 text-xs text-white/50 font-medium uppercase tracking-wider">
+              <span className="flex-1">Hidden path</span>
+              <span className="w-24 text-right">Size</span>
+              <span className="w-24">Category</span>
+              <div className="w-20" />
+            </div>
+            {ignoredFiles.length > 0 && (
+              <button
+                onClick={handleUnignoreAll}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium text-accent-primary bg-accent-primary/10 hover:bg-accent-primary/20 border border-accent-primary/25 transition-all"
+                title="Restore all hidden paths to scans"
+              >
+                <ArrowCounterClockwise size={14} />
+                Restore All
+              </button>
+            )}
+          </div>
+
+          <div className="max-h-[65vh] overflow-y-auto">
+            {ignoredFiles.length === 0 ? (
+              <div className="px-5 py-12 text-center text-text-muted text-sm">
+                No hidden paths.
+              </div>
+            ) : (
+              ignoredFiles.map(({ entry, file }) => {
+                const catColor = file ? getCategoryColor(file.file_type) : '#8E8E93';
+                return (
+                  <motion.div
+                    key={entry.path}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="group flex items-center gap-3 px-5 py-4 border-b border-white/5 hover:bg-white/5 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <EyeSlash size={14} className="text-[#FF9F0A] shrink-0" />
+                        <span className="text-sm text-text-primary truncate">
+                          {file?.name ?? entry.path.split('/').pop() ?? entry.path}
+                        </span>
+                      </div>
+                      <p className="text-xs text-text-muted truncate mt-0.5">
+                        {entry.path.replace(/^\/Users\/[^/]+\//, '~/')}
+                      </p>
+                    </div>
+
+                    <span className="w-24 text-right text-sm font-semibold text-text-primary tabular-nums">
+                      {file ? formatBytes(file.size) : '—'}
+                    </span>
+
+                    <span className="w-24">
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-none text-xs"
+                        style={{ backgroundColor: `${catColor}15`, color: catColor }}
+                      >
+                        {file?.file_type ?? 'Hidden'}
+                      </span>
+                    </span>
+
+                    <div className="w-20 flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => handleUnignore(entry.path)}
+                        className="flex items-center justify-center text-text-muted hover:text-accent-primary transition-colors"
+                        title="Restore to scans"
+                      >
+                        <ArrowCounterClockwise size={15} />
+                      </button>
+                      <button
+                        onClick={() => openInFinder(entry.path)}
+                        className="flex items-center justify-center text-text-muted hover:text-text-primary transition-colors"
+                        title="Open in Finder"
+                      >
+                        <ArrowSquareOut size={14} />
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isScanning && !showIgnored && visibleFiles.length > 0 && (
         <>
           {/* Summary */}
           <div className="grid grid-cols-3 gap-4">
@@ -366,7 +513,7 @@ export default function LargeFiles() {
                       <button
                         onClick={() => handleIgnore(file.path)}
                         className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-[#FF9F0A]"
-                        title="Ignore"
+                        title="Hide from future scans"
                       >
                         <EyeSlash size={14} />
                       </button>
@@ -387,7 +534,7 @@ export default function LargeFiles() {
       )}
 
       {/* Empty state */}
-      {!isScanning && visibleFiles.length === 0 && !error && (
+      {!isScanning && !showIgnored && visibleFiles.length === 0 && !error && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}

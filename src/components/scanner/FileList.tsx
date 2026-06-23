@@ -1,5 +1,4 @@
-import { useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Folder,
   File,
@@ -25,6 +24,8 @@ interface FileListProps {
 }
 
 type SortKey = 'name' | 'size' | 'file_type' | 'safety_level' | 'last_modified';
+const ROW_HEIGHT = 58;
+const OVERSCAN_ROWS = 8;
 
 export function FileList({
   nodes,
@@ -73,6 +74,48 @@ export function FileList({
     return arr;
   }, [filtered, sortBy, sortDir]);
 
+  const totalSize = useMemo(() => sorted.reduce((a, n) => a + n.size, 0), [sorted]);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<number | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const totalHeight = sorted.length * ROW_HEIGHT;
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
+  const visibleCount = Math.ceil((viewportHeight || 600) / ROW_HEIGHT) + OVERSCAN_ROWS * 2;
+  const endIndex = Math.min(sorted.length, startIndex + visibleCount);
+  const visibleRows = sorted.slice(startIndex, endIndex);
+
+  const measureViewport = () => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    setScrollTop(viewport.scrollTop);
+    setViewportHeight(viewport.clientHeight);
+  };
+
+  const updateViewport = () => {
+    if (frameRef.current !== null) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      measureViewport();
+    });
+  };
+
+  useLayoutEffect(() => {
+    measureViewport();
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const observer = new ResizeObserver(measureViewport);
+    observer.observe(viewport);
+
+    return () => {
+      observer.disconnect();
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, []);
+
   const columns: { key: SortKey; label: string; width: string }[] = [
     { key: 'name', label: 'Name', width: 'flex-1 min-w-0' },
     { key: 'size', label: 'Size', width: 'w-24 text-right' },
@@ -104,47 +147,52 @@ export function FileList({
       </div>
 
       {/* Rows */}
-      <div className="max-h-[60vh] overflow-y-auto">
+      <div
+        ref={viewportRef}
+        onScroll={updateViewport}
+        onMouseEnter={updateViewport}
+        className="max-h-[60vh] overflow-y-auto"
+      >
         {sorted.length === 0 ? (
           <div className="px-4 py-12 text-center text-text-muted text-sm">
             No files match your filters
           </div>
         ) : (
-          <AnimatePresence mode="popLayout">
-            {sorted.map((node, i) => (
+          <div className="relative" style={{ height: totalHeight }}>
+            {visibleRows.map((node, i) => (
               <FileRow
                 key={node.path}
                 node={node}
-                index={i}
+                style={{ transform: `translateY(${(startIndex + i) * ROW_HEIGHT}px)` }}
                 isSelected={selectedPaths.has(node.path)}
                 onToggleSelect={() => onToggleSelect(node.path)}
                 onOpenInFinder={() => onOpenInFinder(node.path)}
                 onNavigate={() => onNavigate(node)}
               />
             ))}
-          </AnimatePresence>
+          </div>
         )}
       </div>
 
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-bg-secondary border-t border-bg-tertiary text-xs text-text-muted">
         <span>{sorted.length} items</span>
-        <span>{formatBytes(sorted.reduce((a, n) => a + n.size, 0))} total</span>
+        <span>{formatBytes(totalSize)} total</span>
       </div>
     </div>
   );
 }
 
-function FileRow({
+const FileRow = memo(function FileRow({
   node,
-  index,
+  style,
   isSelected,
   onToggleSelect,
   onOpenInFinder,
   onNavigate,
 }: {
   node: FileNode;
-  index: number;
+  style: CSSProperties;
   isSelected: boolean;
   onToggleSelect: () => void;
   onOpenInFinder: () => void;
@@ -154,12 +202,9 @@ function FileRow({
   const categoryColor = getCategoryColor(node.file_type);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0, x: -20 }}
-      transition={{ delay: Math.min(index * 0.02, 0.3) }}
-      className={`group flex items-center gap-3 px-4 py-2.5 border-b border-bg-tertiary hover:bg-bg-secondary transition-colors cursor-default ${
+    <div
+      style={style}
+      className={`group absolute left-0 right-0 top-0 h-[58px] flex items-center gap-3 px-4 py-2.5 border-b border-bg-tertiary hover:bg-bg-secondary transition-colors cursor-default ${
         isSelected ? 'bg-accent-primary/5' : ''
       }`}
     >
@@ -240,9 +285,9 @@ function FileRow({
       >
         <ArrowSquareOut size={14} />
       </button>
-    </motion.div>
+    </div>
   );
-}
+});
 
 /** Determine which disk/volume a path belongs to */
 function getDiskLabel(path: string): string {

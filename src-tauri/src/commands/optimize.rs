@@ -60,7 +60,9 @@ pub fn list_optimize_actions() -> Vec<OptimizeAction> {
 }
 
 #[tauri::command]
-pub async fn run_optimize_actions(action_ids: Vec<String>) -> Result<Vec<OptimizeActionResult>, String> {
+pub async fn run_optimize_actions(
+    action_ids: Vec<String>,
+) -> Result<Vec<OptimizeActionResult>, String> {
     tokio::task::spawn_blocking(move || {
         action_ids
             .into_iter()
@@ -133,7 +135,8 @@ fn run_dns_flush() -> OptimizeActionResult {
                 id: "dns".to_string(),
                 label: "Flush DNS Cache".to_string(),
                 success: false,
-                message: stderr.unwrap_or_else(|| "DNS flush command returned a non-zero status".to_string()),
+                message: stderr
+                    .unwrap_or_else(|| "DNS flush command returned a non-zero status".to_string()),
             }
         }
         (Err(e), _) | (_, Err(e)) => OptimizeActionResult {

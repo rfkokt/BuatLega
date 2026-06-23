@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { lazy, Suspense, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   ChartDonut,
@@ -8,11 +8,14 @@ import {
 } from '@phosphor-icons/react';
 import { useScanStore } from '../stores/scan-store';
 import { useScanner } from '../hooks/use-scanner';
-import { Treemap } from '../components/visualizer/Treemap';
 import { SimpleSummary } from '../components/visualizer/SimpleSummary';
 import { Breadcrumbs } from '../components/visualizer/Breadcrumbs';
 import { formatBytes } from '../lib/format';
 import type { FileNode } from '../types';
+
+const Treemap = lazy(() => import('../components/visualizer/Treemap').then((module) => ({
+  default: module.Treemap,
+})));
 
 export default function Visualizer() {
   const { scanResult, isScanning, progress } = useScanStore();
@@ -43,7 +46,7 @@ export default function Visualizer() {
   const handleStartScan = useCallback(async () => {
     setNavStack([]);
     const homeDir = await import('@tauri-apps/api/path').then((m) => m.homeDir()).catch(() => '/');
-    scan(homeDir);
+    scan(homeDir, 5);
   }, [scan]);
 
   // Build breadcrumb path
@@ -168,10 +171,18 @@ export default function Visualizer() {
                 totalSize={currentNode.size}
               />
             ) : (
-              <Treemap
-                data={currentNode}
-                onDrillDown={handleDrillDown}
-              />
+              <Suspense
+                fallback={
+                  <div className="h-full min-h-[400px] flex items-center justify-center">
+                    <Spinner size={24} className="animate-spin text-[#00F0FF]" />
+                  </div>
+                }
+              >
+                <Treemap
+                  data={currentNode}
+                  onDrillDown={handleDrillDown}
+                />
+              </Suspense>
             )}
           </div>
 

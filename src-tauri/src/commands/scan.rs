@@ -1,7 +1,7 @@
 use crate::commands::persistence::{is_ignored_path, load_ignored_paths, save_scan_cache};
 use crate::models::{FileCategory, FileNode, SafetyLevel, ScanProgress, ScanResult};
 use crate::scanner::categorizer::categorize_path;
-use crate::scanner::rules::assess_safety;
+use crate::scanner::rules::{assess_large_file_safety, assess_safety};
 use crate::storage::{accessed_secs, allocated_size, modified_secs};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -95,32 +95,25 @@ pub async fn start_scan(
         let duration = start.elapsed().as_millis() as u64;
         let total_size = root.size;
 
-        Ok(ScanResult {
+        let result = ScanResult {
             root,
             total_size,
             file_count,
             dir_count,
             scan_duration_ms: duration,
             categories,
-        })
+        };
+
+        if let Err(e) = save_scan_cache(&cache_path, cache_depth, &result) {
+            log::warn!("Failed to save scan cache: {}", e);
+        }
+
+        Ok(result)
     })
     .await;
 
     SCAN_CANCELLED.store(false, Ordering::Relaxed);
-    let result = task_result.map_err(|e| format!("Scan task failed: {}", e))??;
-
-    let result_for_cache = result.clone();
-    let cache_result = tokio::task::spawn_blocking(move || {
-        save_scan_cache(&cache_path, cache_depth, &result_for_cache)
-    })
-    .await
-    .map_err(|e| format!("Scan cache task failed: {}", e))?;
-
-    if let Err(e) = cache_result {
-        log::warn!("Failed to save scan cache: {}", e);
-    }
-
-    Ok(result)
+    task_result.map_err(|e| format!("Scan task failed: {}", e))?
 }
 
 #[tauri::command]
@@ -152,6 +145,82 @@ fn aggregates_children(category: &FileCategory) -> bool {
     )
 }
 
+#[derive(Default)]
+struct DirectorySummary {
+    size: u64,
+    files: u64,
+    dirs: u64,
+}
+
+fn summarize_directory_contents(
+    path: &std::path::Path,
+    app: &tauri::AppHandle,
+    scanned: &AtomicU64,
+    ignored_paths: &[crate::models::IgnoredPath],
+) -> Result<DirectorySummary, String> {
+    let mut summary = DirectorySummary::default();
+
+    match std::fs::read_dir(path) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                if SCAN_CANCELLED.load(Ordering::Relaxed) {
+                    return Err("Scan cancelled".to_string());
+                }
+
+                let entry_path = entry.path();
+                let entry_name = entry.file_name().to_string_lossy().to_string();
+                let count = scanned.fetch_add(1, Ordering::Relaxed) + 1;
+
+                if count % THROTTLE_BATCH == 0 {
+                    let _ = app.emit(
+                        "scan://progress",
+                        ScanProgress {
+                            scanned: count,
+                            current_path: entry_path.to_string_lossy().to_string(),
+                            estimated_total: None,
+                        },
+                    );
+                    std::thread::sleep(THROTTLE_SLEEP);
+                }
+
+                if should_skip_path(&entry_path, &entry_name)
+                    || is_ignored_path(&entry_path, ignored_paths)
+                {
+                    continue;
+                }
+
+                let Ok(metadata) = std::fs::symlink_metadata(&entry_path) else {
+                    continue;
+                };
+                let file_type = metadata.file_type();
+
+                if file_type.is_symlink() {
+                    summary.size += allocated_size(&metadata);
+                } else if file_type.is_dir() {
+                    summary.dirs += 1;
+                    let child =
+                        summarize_directory_contents(&entry_path, app, scanned, ignored_paths)?;
+                    summary.size += child.size;
+                    summary.files += child.files;
+                    summary.dirs += child.dirs;
+                } else {
+                    summary.files += 1;
+                    summary.size += allocated_size(&metadata);
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!(
+                "Skipping inaccessible directory: {} ({})",
+                path.display(),
+                e
+            );
+        }
+    }
+
+    Ok(summary)
+}
+
 fn scan_directory(
     path: &std::path::Path,
     max_depth: u32,
@@ -180,6 +249,30 @@ fn scan_directory(
 
     let mut children = Vec::new();
     let mut total_size: u64 = 0;
+
+    if max_depth > 0 && aggregates_children(&category) {
+        let summary = summarize_directory_contents(path, app, scanned, ignored_paths)?;
+        total_size = summary.size;
+        *file_count += summary.files;
+        *dir_count += summary.dirs;
+        *categories.entry(category.to_string()).or_insert(0) += total_size;
+
+        let metadata = std::fs::metadata(path).ok();
+        let last_modified = metadata.as_ref().and_then(modified_secs);
+        let last_accessed = metadata.as_ref().and_then(accessed_secs);
+
+        return Ok(FileNode {
+            name,
+            path: path.to_string_lossy().to_string(),
+            size: total_size,
+            is_dir: true,
+            file_type: category,
+            children: Some(children),
+            last_accessed,
+            last_modified,
+            safety_level: safety,
+        });
+    }
 
     if max_depth > 0 {
         match std::fs::read_dir(path) {
@@ -265,7 +358,7 @@ fn scan_directory(
                         }
                     }
 
-                    let count = scanned.fetch_add(1, Ordering::Relaxed);
+                    let count = scanned.fetch_add(1, Ordering::Relaxed) + 1;
 
                     // Emit progress + throttle every THROTTLE_BATCH files
                     if count % THROTTLE_BATCH == 0 {
@@ -296,13 +389,9 @@ fn scan_directory(
     // Sort children by size descending
     children.sort_by(|a, b| b.size.cmp(&a.size));
 
-    let last_modified = std::fs::metadata(path)
-        .ok()
-        .and_then(|metadata| modified_secs(&metadata));
-
-    let last_accessed = std::fs::metadata(path)
-        .ok()
-        .and_then(|metadata| accessed_secs(&metadata));
+    let metadata = std::fs::metadata(path).ok();
+    let last_modified = metadata.as_ref().and_then(modified_secs);
+    let last_accessed = metadata.as_ref().and_then(accessed_secs);
 
     Ok(FileNode {
         name,
@@ -353,7 +442,7 @@ pub async fn find_large_files(path: String, min_size_bytes: u64) -> Result<Vec<F
                         let name = entry.file_name().to_string_lossy().to_string();
                         let entry_path = entry.path();
                         let category = categorize_path(&entry_path, &name);
-                        let safety = assess_safety(&entry_path, &category);
+                        let safety = assess_large_file_safety(&entry_path, &category);
 
                         results.push(FileNode {
                             name,

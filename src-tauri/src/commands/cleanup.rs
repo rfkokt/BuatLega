@@ -124,7 +124,9 @@ fn error_preview_item(error: CleanupError) -> CleanupPreviewItem {
     }
 }
 
-fn split_nested_targets(mut targets: Vec<CleanupTarget>) -> (Vec<CleanupTarget>, Vec<CleanupPreviewItem>) {
+fn split_nested_targets(
+    mut targets: Vec<CleanupTarget>,
+) -> (Vec<CleanupTarget>, Vec<CleanupPreviewItem>) {
     targets.sort_by_key(|target| target.path.components().count());
     let mut kept: Vec<CleanupTarget> = Vec::new();
     let mut skipped = Vec::new();

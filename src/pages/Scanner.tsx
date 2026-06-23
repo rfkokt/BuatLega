@@ -87,61 +87,35 @@ export default function Scanner() {
         .then((m) => m.homeDir())
         .catch(() => '/');
       setNavStack([]);
-      scan(homeDir, 3, { forceRefresh: Boolean(scanResult) });
+      scan(homeDir, 5, { forceRefresh: Boolean(scanResult) });
     } catch (e) {
       console.error(e);
     }
   };
 
-  // Filter and sort
-  const displayItems = useMemo(() => {
-    let items = [...currentChildren];
+  const nodeByPath = useMemo(() => {
+    const map = new Map<string, FileNode>();
+    const walk = (node: FileNode) => {
+      map.set(node.path, node);
+      node.children?.forEach(walk);
+    };
 
-    if (categoryFilter.length > 0) {
-      items = items.filter((i) => i.file_type && categoryFilter.includes(i.file_type as FileCategory));
+    if (scanResult?.root) {
+      walk(scanResult.root);
     }
-    if (safetyFilter.length > 0) {
-      items = items.filter((i) => i.safety_level && safetyFilter.includes(i.safety_level));
-    }
 
-    items.sort((a, b) => {
-      let aVal = a[sortBy];
-      let bVal = b[sortBy];
-
-      if (sortBy === 'safety_level') {
-        const order = { Safe: 1, Review: 2, Caution: 3 };
-        aVal = order[a.safety_level as keyof typeof order] || 4;
-        bVal = order[b.safety_level as keyof typeof order] || 4;
-      }
-
-      if (aVal === bVal) return 0;
-      if (aVal === undefined) return 1;
-      if (bVal === undefined) return -1;
-
-      const factor = sortDir === 'asc' ? 1 : -1;
-      return aVal < bVal ? -1 * factor : 1 * factor;
-    });
-
-    return items;
-  }, [currentChildren, sortBy, sortDir, categoryFilter, safetyFilter]);
+    return map;
+  }, [scanResult]);
 
   // Selected items list for ConfirmDialog
   const selectedItemsList = useMemo(() => {
-    const found: FileNode[] = [];
-    const paths = new Set(selectedPaths);
-    
-    const findNodes = (node: FileNode) => {
-      if (paths.has(node.path)) {
-        found.push(node);
-      }
-      if (node.children) {
-        node.children.forEach(findNodes);
-      }
-    };
-    
-    if (scanResult && scanResult.root) findNodes(scanResult.root);
-    return found;
-  }, [scanResult, selectedPaths]);
+    const items: FileNode[] = [];
+    selectedPaths.forEach((path) => {
+      const node = nodeByPath.get(path);
+      if (node) items.push(node);
+    });
+    return items;
+  }, [nodeByPath, selectedPaths]);
 
   const totalSelectedSize = useMemo(() => {
     return selectedItemsList.reduce((acc, curr) => acc + curr.size, 0);
@@ -383,7 +357,7 @@ export default function Scanner() {
 
             <div className="flex items-center gap-3">
               <button
-                onClick={() => selectAllSafe(displayItems)}
+                onClick={() => selectAllSafe(currentNode ? [currentNode] : currentChildren)}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-accent-secondary bg-accent-secondary/10 hover:bg-accent-secondary/20 transition-colors border border-accent-secondary/20"
               >
                 <CheckCircle size={14} />
@@ -403,7 +377,7 @@ export default function Scanner() {
 
           <div className="flex-1 overflow-hidden p-2">
             <FileList
-              nodes={displayItems}
+              nodes={currentChildren}
               selectedPaths={selectedPaths}
               onToggleSelect={toggleSelected}
               onNavigate={handleDrillDown}

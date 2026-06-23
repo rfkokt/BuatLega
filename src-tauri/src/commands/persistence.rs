@@ -84,7 +84,10 @@ pub fn load_ignored_paths() -> Result<Vec<IgnoredPath>, String> {
 pub fn is_ignored_path(path: &Path, ignored: &[IgnoredPath]) -> bool {
     let path_str = path.to_string_lossy();
     ignored.iter().any(|ignored| {
-        path_str == ignored.path || path_str.starts_with(&format!("{}/", ignored.path))
+        path_str == ignored.path
+            || path_str
+                .strip_prefix(ignored.path.as_str())
+                .is_some_and(|suffix| suffix.starts_with('/'))
     })
 }
 

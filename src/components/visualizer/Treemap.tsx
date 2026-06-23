@@ -85,11 +85,17 @@ export function Treemap({ data, onDrillDown }: TreemapProps) {
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, FileNode>();
-    const walk = (node: FileNode) => {
+    const walk = (node: FileNode, depth: number) => {
       map.set(node.path, node);
-      node.children?.forEach(walk);
+      if (depth <= 0 || !node.children) return;
+
+      node.children
+        .filter((child) => child.size > 0)
+        .sort((a, b) => b.size - a.size)
+        .slice(0, 50)
+        .forEach((child) => walk(child, depth - 1));
     };
-    walk(data);
+    walk(data, 2);
     return map;
   }, [data]);
 

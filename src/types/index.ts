@@ -60,6 +60,7 @@ export interface InstalledApp {
   related_size: number;
   total_size: number;
   related_files: AppRelatedFile[];
+  last_used?: number;
   last_modified?: number;
   is_protected: boolean;
 }

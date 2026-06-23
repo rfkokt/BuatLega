@@ -136,10 +136,9 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
         let cpu = collect_cpu_status();
         let memory = collect_memory_status()?;
         let disks = collect_disk_statuses();
-        let disk = disks
-            .first()
-            .cloned()
-            .unwrap_or_else(|| collect_root_disk_status().unwrap_or_else(|_| default_disk_status()));
+        let disk = disks.first().cloned().unwrap_or_else(|| {
+            collect_root_disk_status().unwrap_or_else(|_| default_disk_status())
+        });
         let disk_io = collect_disk_io();
         let network = collect_network_status();
         let proxy = collect_proxy_status();
@@ -177,7 +176,9 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
 fn collect_cpu_status() -> CpuStatus {
     let load_average = collect_load_average();
     let logical = collect_sysctl_u32("hw.logicalcpu").unwrap_or(1).max(1);
-    let physical = collect_sysctl_u32("hw.physicalcpu").unwrap_or(logical).max(1);
+    let physical = collect_sysctl_u32("hw.physicalcpu")
+        .unwrap_or(logical)
+        .max(1);
     let usage = collect_cpu_usage_percent(logical);
     let (p_cores, e_cores) = collect_core_topology();
 
@@ -293,7 +294,11 @@ fn collect_memory_status() -> Result<MemoryStatus, String> {
     let free = (pages_free + pages_speculative).saturating_mul(page_size);
     let available = (pages_free + pages_speculative + pages_inactive).saturating_mul(page_size);
     let used = total.saturating_sub(available.min(total));
-    let used_percent = if total == 0 { 0.0 } else { (used as f64 / total as f64) * 100.0 };
+    let used_percent = if total == 0 {
+        0.0
+    } else {
+        (used as f64 / total as f64) * 100.0
+    };
     let (swap_used, swap_total) = collect_swap_usage();
 
     Ok(MemoryStatus {
@@ -355,7 +360,9 @@ fn parse_size_token(value: &str) -> u64 {
 }
 
 fn collect_memory_pressure() -> String {
-    let output = command_stdout("memory_pressure", &[]).unwrap_or_default().to_lowercase();
+    let output = command_stdout("memory_pressure", &[])
+        .unwrap_or_default()
+        .to_lowercase();
     if output.contains("critical") {
         "critical".to_string()
     } else if output.contains("warn") {
@@ -418,7 +425,11 @@ fn parse_df_line(line: &str) -> Option<DiskStatus> {
         total,
         used,
         available,
-        used_percent: if total == 0 { 0.0 } else { (used as f64 / total as f64) * 100.0 },
+        used_percent: if total == 0 {
+            0.0
+        } else {
+            (used as f64 / total as f64) * 100.0
+        },
         fstype: String::new(),
         external,
     })
@@ -434,10 +445,19 @@ fn collect_root_disk_status() -> Result<DiskStatus, String> {
     for line in output.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("Device Identifier:") {
-            device = format!("/dev/{}", trimmed.split(':').nth(1).unwrap_or_default().trim());
+            device = format!(
+                "/dev/{}",
+                trimmed.split(':').nth(1).unwrap_or_default().trim()
+            );
         }
-        if trimmed.starts_with("Type (Bundle):") || trimmed.starts_with("File System Personality:") {
-            fstype = trimmed.split(':').nth(1).unwrap_or_default().trim().to_string();
+        if trimmed.starts_with("Type (Bundle):") || trimmed.starts_with("File System Personality:")
+        {
+            fstype = trimmed
+                .split(':')
+                .nth(1)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
         }
         if trimmed.starts_with("Container Total Space:") || trimmed.starts_with("Disk Size:") {
             total = total.or_else(|| parse_diskutil_bytes(trimmed));
@@ -460,7 +480,11 @@ fn collect_root_disk_status() -> Result<DiskStatus, String> {
         total,
         used,
         available,
-        used_percent: if total == 0 { 0.0 } else { (used as f64 / total as f64) * 100.0 },
+        used_percent: if total == 0 {
+            0.0
+        } else {
+            (used as f64 / total as f64) * 100.0
+        },
         fstype,
         external: false,
     })
@@ -559,8 +583,14 @@ fn parse_network_counters(output: &str) -> HashMap<String, (u64, u64)> {
         if is_noise_interface(iface) {
             continue;
         }
-        let rx = parts.get(6).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
-        let tx = parts.get(9).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+        let rx = parts
+            .get(6)
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        let tx = parts
+            .get(9)
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
         let entry = counters.entry(iface.to_string()).or_insert((0, 0));
         entry.0 = entry.0.saturating_add(rx);
         entry.1 = entry.1.saturating_add(tx);
@@ -588,9 +618,11 @@ fn collect_interface_ips() -> HashMap<String, String> {
 
 fn is_noise_interface(name: &str) -> bool {
     let lower = name.to_lowercase();
-    ["lo", "awdl", "utun", "llw", "bridge", "gif", "stf", "xhc", "anpi", "ap"]
-        .iter()
-        .any(|prefix| lower.starts_with(prefix))
+    [
+        "lo", "awdl", "utun", "llw", "bridge", "gif", "stf", "xhc", "anpi", "ap",
+    ]
+    .iter()
+    .any(|prefix| lower.starts_with(prefix))
 }
 
 fn collect_proxy_status() -> ProxyStatus {
@@ -601,12 +633,17 @@ fn collect_proxy_status() -> ProxyStatus {
         ("HTTPEnable", "HTTPProxy", "HTTPPort", "HTTP"),
     ] {
         if scutil_value(&output, enabled_key) == Some("1".to_string()) {
-            let host = scutil_value(&output, host_key).unwrap_or_else(|| "System Proxy".to_string());
+            let host =
+                scutil_value(&output, host_key).unwrap_or_else(|| "System Proxy".to_string());
             let port = scutil_value(&output, port_key).unwrap_or_default();
             return ProxyStatus {
                 enabled: true,
                 proxy_type: proxy_type.to_string(),
-                host: if port.is_empty() { host } else { format!("{}:{}", host, port) },
+                host: if port.is_empty() {
+                    host
+                } else {
+                    format!("{}:{}", host, port)
+                },
             };
         }
     }
@@ -615,7 +652,8 @@ fn collect_proxy_status() -> ProxyStatus {
         return ProxyStatus {
             enabled: true,
             proxy_type: "PAC".to_string(),
-            host: scutil_value(&output, "ProxyAutoConfigURLString").unwrap_or_else(|| "PAC".to_string()),
+            host: scutil_value(&output, "ProxyAutoConfigURLString")
+                .unwrap_or_else(|| "PAC".to_string()),
         };
     }
 
@@ -708,16 +746,22 @@ fn collect_thermal_status() -> ThermalStatus {
                 thermal.adapter_power = watts;
             }
         }
-        if let Some(power) = parse_ioreg_number(line, "SystemPowerIn").or_else(|| parse_ioreg_number(line, "SystemPower")) {
+        if let Some(power) = parse_ioreg_number(line, "SystemPowerIn")
+            .or_else(|| parse_ioreg_number(line, "SystemPower"))
+        {
             thermal.system_power = power / 1000.0;
         }
         if let Some(power) = parse_ioreg_number(line, "BatteryPower") {
             thermal.battery_power = power / 1000.0;
         }
-        if let Some(voltage) = parse_ioreg_number(line, "Voltage").or_else(|| parse_ioreg_number(line, "AppleRawBatteryVoltage")) {
+        if let Some(voltage) = parse_ioreg_number(line, "Voltage")
+            .or_else(|| parse_ioreg_number(line, "AppleRawBatteryVoltage"))
+        {
             voltage_mv = voltage;
         }
-        if let Some(amperage) = parse_ioreg_number(line, "InstantAmperage").or_else(|| parse_ioreg_number(line, "Amperage")) {
+        if let Some(amperage) = parse_ioreg_number(line, "InstantAmperage")
+            .or_else(|| parse_ioreg_number(line, "Amperage"))
+        {
             amperage_ma = amperage;
         }
     }
@@ -742,7 +786,11 @@ fn parse_ioreg_number(line: &str, key: &str) -> Option<f64> {
 
 fn collect_hardware_status(total_ram: u64, disk_size: u64) -> HardwareStatus {
     let hardware = command_stdout("system_profiler", &["SPHardwareDataType"]).unwrap_or_default();
-    let display = command_stdout("system_profiler", &["-detailLevel", "mini", "SPDisplaysDataType"]).unwrap_or_default();
+    let display = command_stdout(
+        "system_profiler",
+        &["-detailLevel", "mini", "SPDisplaysDataType"],
+    )
+    .unwrap_or_default();
     let os_version = command_stdout("sw_vers", &["-productVersion"])
         .map(|value| format!("macOS {}", value.trim()))
         .unwrap_or_default();
@@ -785,7 +833,11 @@ fn parse_refresh_rate(output: &str) -> String {
             }
         }
     }
-    if max_hz > 0 { format!("{}Hz", max_hz) } else { String::new() }
+    if max_hz > 0 {
+        format!("{}Hz", max_hz)
+    } else {
+        String::new()
+    }
 }
 
 fn collect_uptime_seconds() -> u64 {
@@ -804,7 +856,8 @@ fn collect_uptime_seconds() -> u64 {
 }
 
 fn collect_top_processes() -> Vec<ProcessStatus> {
-    let output = command_stdout("ps", &["-Aceo", "pid=,pcpu=,pmem=,comm=", "-r"]).unwrap_or_default();
+    let output =
+        command_stdout("ps", &["-Aceo", "pid=,pcpu=,pmem=,comm=", "-r"]).unwrap_or_default();
 
     output
         .lines()
@@ -854,7 +907,11 @@ fn calculate_health(
         if battery.percent < 20 && battery.status.contains("discharging") {
             score -= 10.0;
         }
-        if battery.health.as_deref().is_some_and(|health| !health.eq_ignore_ascii_case("normal")) {
+        if battery
+            .health
+            .as_deref()
+            .is_some_and(|health| !health.eq_ignore_ascii_case("normal"))
+        {
             score -= 5.0;
         }
     }

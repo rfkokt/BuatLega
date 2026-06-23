@@ -117,8 +117,8 @@ pub async fn open_system_preferences() -> Result<(), String> {
 /// after the user toggles Full Disk Access in System Settings.
 #[tauri::command]
 pub async fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
-    let current_exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to get current executable: {}", e))?;
+    let current_exe =
+        std::env::current_exe().map_err(|e| format!("Failed to get current executable: {}", e))?;
 
     // On macOS, the binary is inside Foo.app/Contents/MacOS/foo.
     // We need to find the .app bundle and use `open` to relaunch it properly.

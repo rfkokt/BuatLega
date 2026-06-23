@@ -1,7 +1,9 @@
 use crate::storage::allocated_size;
+use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppRelatedFile {
@@ -19,8 +21,16 @@ pub struct InstalledApp {
     pub related_size: u64,
     pub total_size: u64,
     pub related_files: Vec<AppRelatedFile>,
+    pub last_used: Option<i64>,
     pub last_modified: Option<i64>,
     pub is_protected: bool,
+}
+
+#[derive(Default)]
+struct AppPlist {
+    display_name: Option<String>,
+    name: Option<String>,
+    bundle_id: Option<String>,
 }
 
 #[tauri::command]
@@ -33,7 +43,7 @@ pub async fn list_installed_apps() -> Result<Vec<InstalledApp>, String> {
 fn scan_installed_apps() -> Result<Vec<InstalledApp>, String> {
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
     let roots = [PathBuf::from("/Applications"), home.join("Applications")];
-    let mut apps = Vec::new();
+    let mut app_paths = Vec::new();
     let mut seen = HashSet::new();
 
     for root in roots {
@@ -52,38 +62,86 @@ fn scan_installed_apps() -> Result<Vec<InstalledApp>, String> {
             }
 
             let normalized = path.to_string_lossy().to_string();
-            if !seen.insert(normalized.clone()) {
+            if !seen.insert(normalized) {
                 continue;
             }
 
-            let name = app_display_name(&path);
-            let bundle_id = read_info_plist_value(&path, "CFBundleIdentifier");
-            let app_size = dir_size_fast(&path);
-            let related_files = find_related_files(&home, &name, bundle_id.as_deref(), &path);
-            let related_size = related_files.iter().map(|file| file.size).sum();
-            let is_protected = is_protected_app(&path, bundle_id.as_deref(), &name);
-
-            apps.push(InstalledApp {
-                name,
-                path: normalized,
-                bundle_id,
-                app_size,
-                related_size,
-                total_size: app_size + related_size,
-                related_files,
-                last_modified: get_modified_time(&path),
-                is_protected,
-            });
+            app_paths.push(path);
         }
     }
 
-    apps.sort_by(|a, b| b.total_size.cmp(&a.total_size).then_with(|| a.name.cmp(&b.name)));
+    let worker_count = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(2)
+        .clamp(2, 4);
+    let queue = Arc::new(Mutex::new(app_paths));
+    let apps = Arc::new(Mutex::new(Vec::new()));
+
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let queue = Arc::clone(&queue);
+            let apps = Arc::clone(&apps);
+            let home = home.clone();
+
+            scope.spawn(move || loop {
+                let path = {
+                    let mut queue = queue.lock().expect("app scan queue poisoned");
+                    queue.pop()
+                };
+
+                let Some(path) = path else {
+                    break;
+                };
+
+                let app = scan_app(&home, path);
+                let mut apps = apps.lock().expect("app scan results poisoned");
+                apps.push(app);
+            });
+        }
+    });
+
+    let mut apps = Arc::try_unwrap(apps)
+        .map_err(|_| "Could not unwrap app scan results".to_string())?
+        .into_inner()
+        .map_err(|_| "App scan results lock poisoned".to_string())?;
+
+    apps.sort_by(|a, b| {
+        b.total_size
+            .cmp(&a.total_size)
+            .then_with(|| a.name.cmp(&b.name))
+    });
     Ok(apps)
 }
 
-fn app_display_name(path: &Path) -> String {
-    read_info_plist_value(path, "CFBundleDisplayName")
-        .or_else(|| read_info_plist_value(path, "CFBundleName"))
+fn scan_app(home: &Path, path: PathBuf) -> InstalledApp {
+    let plist = read_info_plist(&path);
+    let name = app_display_name(&path, &plist);
+    let bundle_id = plist.bundle_id;
+    let normalized = path.to_string_lossy().to_string();
+    let app_size = dir_size_fast(&path);
+    let related_files = find_related_files(home, &name, bundle_id.as_deref(), &path);
+    let related_size = related_files.iter().map(|file| file.size).sum();
+    let is_protected = is_protected_app(&path, bundle_id.as_deref(), &name);
+
+    InstalledApp {
+        name,
+        path: normalized,
+        bundle_id,
+        app_size,
+        related_size,
+        total_size: app_size + related_size,
+        related_files,
+        last_used: get_last_used_time(&path),
+        last_modified: get_modified_time(&path),
+        is_protected,
+    }
+}
+
+fn app_display_name(path: &Path, plist: &AppPlist) -> String {
+    plist
+        .display_name
+        .clone()
+        .or_else(|| plist.name.clone())
         .unwrap_or_else(|| {
             path.file_stem()
                 .map(|name| name.to_string_lossy().to_string())
@@ -91,27 +149,41 @@ fn app_display_name(path: &Path) -> String {
         })
 }
 
-fn read_info_plist_value(app_path: &Path, key: &str) -> Option<String> {
+fn plist_string(value: &serde_json::Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value != "(null)")
+        .map(str::to_string)
+}
+
+fn read_info_plist(app_path: &Path) -> AppPlist {
     let plist_path = app_path.join("Contents/Info.plist");
     if !plist_path.exists() {
-        return None;
+        return AppPlist::default();
     }
 
     let output = std::process::Command::new("plutil")
-        .args(["-extract", key, "raw"])
+        .args(["-convert", "json", "-o", "-"])
         .arg(&plist_path)
-        .output()
-        .ok()?;
+        .output();
 
+    let Ok(output) = output else {
+        return AppPlist::default();
+    };
     if !output.status.success() {
-        return None;
+        return AppPlist::default();
     }
 
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if value.is_empty() || value == "(null)" {
-        None
-    } else {
-        Some(value)
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+        return AppPlist::default();
+    };
+
+    AppPlist {
+        display_name: plist_string(&value, "CFBundleDisplayName"),
+        name: plist_string(&value, "CFBundleName"),
+        bundle_id: plist_string(&value, "CFBundleIdentifier"),
     }
 }
 
@@ -161,20 +233,37 @@ fn find_related_files(
 
     if let Some(bundle) = bundle_id {
         candidates.extend([
-            (home.join("Library/Application Support").join(bundle), "Application Support"),
+            (
+                home.join("Library/Application Support").join(bundle),
+                "Application Support",
+            ),
             (home.join("Library/Caches").join(bundle), "Caches"),
             (home.join("Library/Logs").join(bundle), "Logs"),
-            (home.join("Library/HTTPStorages").join(bundle), "HTTP Storage"),
+            (
+                home.join("Library/HTTPStorages").join(bundle),
+                "HTTP Storage",
+            ),
             (home.join("Library/WebKit").join(bundle), "WebKit"),
             (home.join("Library/Containers").join(bundle), "Container"),
-            (home.join("Library/Saved Application State").join(format!("{bundle}.savedState")), "Saved State"),
-            (home.join("Library/Preferences").join(format!("{bundle}.plist")), "Preferences"),
+            (
+                home.join("Library/Saved Application State")
+                    .join(format!("{bundle}.savedState")),
+                "Saved State",
+            ),
+            (
+                home.join("Library/Preferences")
+                    .join(format!("{bundle}.plist")),
+                "Preferences",
+            ),
         ]);
     }
 
     for name in &names {
         candidates.extend([
-            (home.join("Library/Application Support").join(name), "Application Support"),
+            (
+                home.join("Library/Application Support").join(name),
+                "Application Support",
+            ),
             (home.join("Library/Caches").join(name), "Caches"),
             (home.join("Library/Logs").join(name), "Logs"),
             (home.join("Library/WebKit").join(name), "WebKit"),
@@ -214,7 +303,7 @@ fn find_related_files(
 
 fn dir_size_fast(path: &Path) -> u64 {
     jwalk::WalkDir::new(path)
-        .parallelism(jwalk::Parallelism::RayonNewPool(2))
+        .parallelism(jwalk::Parallelism::Serial)
         .into_iter()
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| std::fs::symlink_metadata(entry.path()).ok())
@@ -229,4 +318,25 @@ fn get_modified_time(path: &Path) -> Option<i64> {
         .and_then(|metadata| metadata.modified().ok())
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|duration| duration.as_secs() as i64)
+}
+
+fn get_last_used_time(path: &Path) -> Option<i64> {
+    let output = std::process::Command::new("mdls")
+        .args(["-raw", "-name", "kMDItemLastUsedDate"])
+        .arg(path)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() || value == "(null)" {
+        return None;
+    }
+
+    DateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S %z")
+        .ok()
+        .map(|datetime| datetime.timestamp())
 }
