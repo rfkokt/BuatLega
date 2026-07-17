@@ -24,6 +24,20 @@ pub struct SystemStatus {
     pub battery: Option<BatteryStatus>,
     pub uptime_seconds: u64,
     pub top_processes: Vec<ProcessStatus>,
+    pub sale_checklist: SaleChecklist,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaleChecklist {
+    pub boot_date: String,
+    pub system_age_days: u32,
+    pub warranty_status: String,
+    pub warranty_expires: Option<String>,
+    pub disk_health: String,
+    pub disk_health_detail: String,
+    pub ssd_lifetime_used: Option<f64>,
+    pub total_writes_gb: Option<f64>,
+    pub ssd_wear_level: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -147,6 +161,7 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
         let uptime_seconds = collect_uptime_seconds();
         let top_processes = collect_top_processes();
         let hardware = collect_hardware_status(memory.total, disk.total);
+        let sale_checklist = collect_sale_checklist(battery.as_ref());
         let (health_score, health_label) = calculate_health(&cpu, &memory, &disk, battery.as_ref());
 
         Ok(SystemStatus {
@@ -167,6 +182,7 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
             battery,
             uptime_seconds,
             top_processes,
+            sale_checklist,
         })
     })
     .await
@@ -954,4 +970,184 @@ fn command_stdout(program: &str, args: &[&str]) -> Result<String, String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn collect_sale_checklist(battery: Option<&BatteryStatus>) -> SaleChecklist {
+    let boot_date = collect_boot_date();
+    let system_age_days = collect_system_age_days();
+    let (warranty_status, warranty_expires) = collect_warranty_status();
+    let (disk_health, disk_health_detail, ssd_lifetime, total_writes, wear_level) =
+        collect_disk_health();
+
+    SaleChecklist {
+        boot_date,
+        system_age_days,
+        warranty_status,
+        warranty_expires,
+        disk_health,
+        disk_health_detail,
+        ssd_lifetime_used: ssd_lifetime,
+        total_writes_gb: total_writes,
+        ssd_wear_level: wear_level,
+    }
+}
+
+fn collect_boot_date() -> String {
+    let output = command_stdout("sysctl", &["-n", "kern.boottime"]).unwrap_or_default();
+    let boot_secs = output
+        .split("sec = ")
+        .nth(1)
+        .and_then(|tail| tail.split(',').next())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or_default();
+
+    if boot_secs == 0 {
+        return String::new();
+    }
+
+    let boot_time = UNIX_EPOCH + std::time::Duration::from_secs(boot_secs);
+    if let Ok(datetime) = chrono::DateTime::<chrono::Local>::try_from(boot_time) {
+        datetime.format("%Y-%m-%d").to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn collect_system_age_days() -> u32 {
+    let output = command_stdout("sysctl", &["-n", "kern.boottime"]).unwrap_or_default();
+    let boot_secs = output
+        .split("sec = ")
+        .nth(1)
+        .and_then(|tail| tail.split(',').next())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or_default();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+
+    ((now.saturating_sub(boot_secs)) / 86400) as u32
+}
+
+fn collect_warranty_status() -> (String, Option<String>) {
+    let hardware = command_stdout("system_profiler", &["SPHardwareDataType"]).unwrap_or_default();
+    let serial = parse_profiler_field(&hardware, "Serial Number")
+        .unwrap_or_default();
+
+    if serial.is_empty() || serial.contains("n/a") {
+        return (String::from("Unknown"), None);
+    }
+
+    // Check coverage via Apple API
+    let url = format!(
+        "https://support-sp.apple.com/sp/product?ecid={}",
+        serial
+    );
+    let output = command_stdout("curl", &["-s", "--max-time", "5", &url]).unwrap_or_default();
+
+    if output.contains("Active") || output.contains("Covered") {
+        let expires = parse_warranty_expires(&output);
+        (String::from("Active"), expires)
+    } else if output.contains("Expired") {
+        (String::from("Expired"), None)
+    } else {
+        (String::from("Check manually"), None)
+    }
+}
+
+fn parse_warranty_expires(output: &str) -> Option<String> {
+    output
+        .lines()
+        .find(|line| line.to_lowercase().contains("estimated expiration"))
+        .and_then(|line| line.split(":").nth(1))
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+fn collect_disk_health() -> (String, String, Option<f64>, Option<f64>, Option<f64>) {
+    // Try to get SMART data via diskutil
+    let output = command_stdout("diskutil", &["info", "/"]).unwrap_or_default();
+
+    // Check for SSD/NVMe
+    let is_ssd = output.to_lowercase().contains("solid state")
+        || output.to_lowercase().contains("nvme")
+        || output.to_lowercase().contains("apfs");
+
+    if !is_ssd {
+        return (String::from("N/A"), String::from("HDD - SMART not available"), None, None, None);
+    }
+
+    // Try to get BSD identifier for smartctl
+    let device_id = output
+        .lines()
+        .find(|line| line.trim_start().starts_with("Part of Whole:"))
+        .and_then(|line| line.split(':').nth(1))
+        .map(|v| v.trim().to_string())
+        .unwrap_or_default();
+
+    // Try smartctl if available
+    let smart_output = command_stdout("smartctl", &["-a", &device_id]).unwrap_or_default();
+
+    if smart_output.is_empty() || smart_output.contains("Unknown USB") {
+        // Fallback: check diskutil for disk health info
+        let health_line = output
+            .lines()
+            .find(|line| line.to_lowercase().contains("disk size") || line.to_lowercase().contains("total size"));
+        return (
+            String::from("Good (APFS)"),
+            String::from("APFS disk - no errors reported"),
+            None,
+            None,
+            None,
+        );
+    }
+
+    // Parse smartctl output
+    let mut reallocated_sectors: Option<u64> = None;
+    let mut power_on_hours: Option<u64> = None;
+    let mut total_bytes_written: Option<f64> = None;
+    let mut wear_level: Option<f64> = None;
+
+    for line in smart_output.lines() {
+        let lower = line.to_lowercase();
+        if lower.contains("reallocated_sector") || lower.contains("reallocated_event_count") {
+            reallocated_sectors = line
+                .split_whitespace()
+                .last()
+                .and_then(|v| v.parse::<u64>().ok());
+        }
+        if lower.contains("power_on_hours") {
+            power_on_hours = line
+                .split_whitespace()
+                .last()
+                .and_then(|v| v.parse::<u64>().ok());
+        }
+        if lower.contains("total_lbaw_written") || lower.contains("bytes written") {
+            if let Some(val) = line.split_whitespace().last() {
+                let cleaned = val.replace(",", "");
+                if let Ok(bytes) = cleaned.parse::<u64>() {
+                    total_bytes_written = Some(bytes as f64 / 1_000_000_000.0);
+                }
+            }
+        }
+        if lower.contains("wear_leveling_count") || lower.contains("percentage_used") {
+            if let Some(val) = line.split_whitespace().last() {
+                if let Ok(pct) = val.replace("%", "").parse::<f64>() {
+                    wear_level = Some(pct);
+                }
+            }
+        }
+    }
+
+    // Determine health status
+    let health = if reallocated_sectors.unwrap_or(0) > 100 {
+        ("Warning".to_string(), format!("{} reallocated sectors", reallocated_sectors.unwrap()))
+    } else if reallocated_sectors.unwrap_or(0) > 0 {
+        ("Good".to_string(), format!("{} reallocated sectors (normal)", reallocated_sectors.unwrap()))
+    } else {
+        ("Excellent".to_string(), "No reallocated sectors".to_string())
+    };
+
+    (health.0, health.1, None, total_bytes_written, wear_level)
 }

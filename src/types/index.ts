@@ -189,6 +189,7 @@ export interface SystemStatus {
   battery?: BatteryStatus;
   uptime_seconds: number;
   top_processes: ProcessStatus[];
+  sale_checklist: SaleChecklist;
 }
 
 export interface HardwareStatus {
@@ -275,4 +276,16 @@ export interface ProcessStatus {
   name: string;
   cpu: number;
   memory: number;
+}
+
+export interface SaleChecklist {
+  boot_date: string;
+  system_age_days: number;
+  warranty_status: string;
+  warranty_expires?: string;
+  disk_health: string;
+  disk_health_detail: string;
+  ssd_lifetime_used?: number;
+  total_writes_gb?: number;
+  ssd_wear_level?: number;
 }

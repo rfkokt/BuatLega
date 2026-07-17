@@ -8,6 +8,10 @@ import {
   HardDrives,
   Memory,
   Pulse,
+  ShoppingCart,
+  Shield,
+  Clock,
+  Warning,
   Spinner,
 } from '@phosphor-icons/react';
 import { formatBytes } from '../lib/format';
@@ -162,6 +166,65 @@ export default function Status() {
 
           <div className="glass rounded-3xl overflow-hidden border border-white/5">
             <div className="px-5 py-4 border-b border-white/5 bg-white/5">
+              <div className="flex items-center gap-2">
+                <ShoppingCart size={14} weight="duotone" className="text-[#0D9488]" />
+                <p className="text-xs uppercase tracking-wider text-white/45 font-medium">Mac for Sale Checklist</p>
+              </div>
+            </div>
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <SaleCheckItem
+                icon={<Clock size={18} weight="duotone" />}
+                label="System Age"
+                value={`${status.sale_checklist.system_age_days} days`}
+                detail={`First boot: ${status.sale_checklist.boot_date || 'Unknown'}`}
+                status={status.sale_checklist.system_age_days > 730 ? 'warning' : 'good'}
+              />
+              <SaleCheckItem
+                icon={<Shield size={18} weight="duotone" />}
+                label="Warranty"
+                value={status.sale_checklist.warranty_status}
+                detail={status.sale_checklist.warranty_expires ? `Expires: ${status.sale_checklist.warranty_expires}` : 'Check at checkcoverage.apple.com'}
+                status={status.sale_checklist.warranty_status === 'Active' ? 'good' : status.sale_checklist.warranty_status === 'Expired' ? 'warning' : 'neutral'}
+              />
+              <SaleCheckItem
+                icon={<HardDrives size={18} weight="duotone" />}
+                label="Disk Health"
+                value={status.sale_checklist.disk_health}
+                detail={status.sale_checklist.disk_health_detail}
+                status={status.sale_checklist.disk_health === 'Excellent' ? 'good' : status.sale_checklist.disk_health === 'N/A' ? 'neutral' : 'warning'}
+              />
+              {status.sale_checklist.ssd_wear_level != null && (
+                <SaleCheckItem
+                  icon={<Warning size={18} weight="duotone" />}
+                  label="SSD Wear Level"
+                  value={`${(100 - status.sale_checklist.ssd_wear_level).toFixed(1)}%`}
+                  detail={`Used: ${status.sale_checklist.ssd_wear_level.toFixed(1)}%`}
+                  status={status.sale_checklist.ssd_wear_level > 80 ? 'warning' : 'good'}
+                />
+              )}
+              {status.sale_checklist.total_writes_gb != null && (
+                <SaleCheckItem
+                  icon={<HardDrives size={18} weight="duotone" />}
+                  label="Total Writes"
+                  value={formatBytes(status.sale_checklist.total_writes_gb * 1_000_000_000)}
+                  detail={`${status.sale_checklist.total_writes_gb.toFixed(0)} GB written`}
+                  status="neutral"
+                />
+              )}
+              {status.battery && status.battery.health && (
+                <SaleCheckItem
+                  icon={<BatteryCharging size={18} weight="duotone" />}
+                  label="Battery Health"
+                  value={status.battery.health}
+                  detail={`Capacity: ${status.battery.capacity ?? 'N/A'}% · Cycles: ${status.battery.cycle_count ?? 'N/A'}`}
+                  status={(status.battery.capacity ?? 100) >= 80 ? 'good' : (status.battery.capacity ?? 100) >= 50 ? 'warning' : 'critical'}
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="glass rounded-3xl overflow-hidden border border-white/5">
+            <div className="px-5 py-4 border-b border-white/5 bg-white/5">
               <p className="text-xs uppercase tracking-wider text-white/45 font-medium">Disks</p>
             </div>
             <div className="divide-y divide-white/5">
@@ -248,6 +311,42 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-white/5 bg-white/[0.03] px-4 py-3">
       <p className="text-xs text-white/40">{label}</p>
       <p className="mt-1 text-sm font-semibold text-white">{value}</p>
+    </div>
+  );
+}
+
+type SaleCheckItemProps = {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  detail: string;
+  status: 'good' | 'warning' | 'critical' | 'neutral';
+};
+
+function SaleCheckItem({ icon, label, value, detail, status }: SaleCheckItemProps) {
+  const statusColors = {
+    good: 'text-green-400',
+    warning: 'text-yellow-400',
+    critical: 'text-red-400',
+    neutral: 'text-white/60',
+  };
+  const statusBg = {
+    good: 'bg-green-400/10',
+    warning: 'bg-yellow-400/10',
+    critical: 'bg-red-400/10',
+    neutral: 'bg-white/5',
+  };
+
+  return (
+    <div className="flex items-start gap-3 p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-colors">
+      <div className={`p-2 rounded-lg ${statusBg[status]}`}>
+        <span className={statusColors[status]}>{icon}</span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] uppercase tracking-wider text-white/40 font-medium mb-0.5">{label}</p>
+        <p className="text-sm font-semibold text-white truncate">{value}</p>
+        <p className="text-[11px] text-white/40 truncate">{detail}</p>
+      </div>
     </div>
   );
 }
