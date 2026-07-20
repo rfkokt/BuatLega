@@ -7,13 +7,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const path = location.pathname;
 
-  let bgClass = 'bg-mesh-home';
-  if (path === '/scan') bgClass = 'bg-mesh-cleanup';
-  else if (path === '/dev-tools') bgClass = 'bg-mesh-apps';
-  else if (path === '/large-files') bgClass = 'bg-mesh-performance';
-
   return (
-    <div className={`flex h-screen w-screen overflow-hidden transition-all duration-1000 ${bgClass}`}>
+    <div className={`flex h-screen w-screen overflow-hidden transition-all duration-1000 bg-mesh-smartcare`}>
       <Sidebar />
       <main className="flex-1 flex flex-col overflow-y-auto relative">
         {/* Top drag region for the main area */}

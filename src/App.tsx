@@ -13,6 +13,12 @@ const Apps = lazy(() => import('./pages/Apps'));
 const Optimize = lazy(() => import('./pages/Optimize'));
 const Status = lazy(() => import('./pages/Status'));
 const Settings = lazy(() => import('./pages/Settings'));
+const Menubar = lazy(() => import('./pages/Menubar'));
+const SmartCare = lazy(() => import('./pages/SmartCare'));
+
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { listen } from '@tauri-apps/api/event';
 
 function RouteFallback() {
   return (
@@ -24,12 +30,24 @@ function RouteFallback() {
 
 function AnimatedRoutes() {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const unlisten = listen<string>('navigate_main', (event) => {
+      navigate(event.payload);
+    });
+
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [navigate]);
 
   return (
     <AnimatePresence mode="wait">
       <Suspense fallback={<RouteFallback />}>
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/smart-care" element={<SmartCare />} />
           <Route path="/scan" element={<Scanner />} />
           <Route path="/visualize" element={<Visualizer />} />
           <Route path="/dev-tools" element={<DevTools />} />
@@ -39,18 +57,38 @@ function AnimatedRoutes() {
           <Route path="/optimize" element={<Optimize />} />
           <Route path="/status" element={<Status />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/menubar" element={<Menubar />} />
         </Routes>
       </Suspense>
     </AnimatePresence>
   );
 }
 
+function AppRoutes() {
+  const location = useLocation();
+  const isMenubar = location.pathname === '/menubar';
+
+  if (isMenubar) {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Routes location={location} key={location.pathname}>
+          <Route path="/menubar" element={<Menubar />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
+  return (
+    <Shell>
+      <AnimatedRoutes />
+    </Shell>
+  );
+}
+
 function App() {
   return (
     <BrowserRouter>
-      <Shell>
-        <AnimatedRoutes />
-      </Shell>
+      <AppRoutes />
     </BrowserRouter>
   );
 }

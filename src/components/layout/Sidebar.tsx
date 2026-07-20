@@ -11,10 +11,12 @@ import {
   AppWindow,
   Lightning,
   Pulse,
+  Desktop,
 } from '@phosphor-icons/react';
 import { useAppInfo } from '../../hooks/use-app-info';
 
 const navItems = [
+  { to: '/smart-care', icon: Desktop, label: 'Smart Care' },
   { to: '/', icon: HardDrives, label: 'Dashboard' },
   { to: '/scan', icon: MagnifyingGlass, label: 'Scanner' },
   { to: '/visualize', icon: ChartDonut, label: 'Visualizer' },

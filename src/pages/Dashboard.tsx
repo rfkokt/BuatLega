@@ -317,6 +317,17 @@ export default function Dashboard() {
               </div>
             </button>
 
+            <button onClick={() => navigate('/menubar')} className="w-full text-left glass p-5 flex items-center gap-5 group transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(255,46,147,0.2)] hover:border-[#FF2E93]/40 overflow-hidden relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-[#FF2E93]/0 via-[#FF2E93]/5 to-[#FF2E93]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 group-hover:bg-[#FF2E93]/20 group-hover:border-[#FF2E93]/50 group-hover:shadow-[0_0_15px_rgba(255,46,147,0.5)] transition-all duration-300 relative z-10">
+                <HardDrives size={24} weight="duotone" className="text-white/70 group-hover:text-[#FF2E93] transition-colors" />
+              </div>
+              <div className="relative z-10">
+                <h3 className="text-base font-semibold text-white group-hover:text-[#FF2E93] transition-colors">Test Menubar UI</h3>
+                <p className="text-xs text-white/50 mt-0.5">View the new toolbar</p>
+              </div>
+            </button>
+
             <button onClick={() => navigate('/large-files')} className="w-full text-left glass p-5 flex items-center gap-5 group transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(191,90,242,0.2)] hover:border-[#BF5AF2]/40 overflow-hidden relative">
               <div className="absolute inset-0 bg-gradient-to-r from-[#BF5AF2]/0 via-[#BF5AF2]/5 to-[#BF5AF2]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
               <div className="p-3 rounded-xl bg-white/5 border border-white/10 group-hover:bg-[#BF5AF2]/20 group-hover:border-[#BF5AF2]/50 group-hover:shadow-[0_0_15px_rgba(191,90,242,0.5)] transition-all duration-300 relative z-10">

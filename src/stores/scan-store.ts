@@ -7,11 +7,13 @@ interface ScanStore {
   progress: ScanProgress | null;
   error: string | null;
   selectedPaths: Set<string>;
+  hasCleaned: boolean;
 
   setScanResult: (result: ScanResult) => void;
   setScanning: (scanning: boolean) => void;
   setProgress: (progress: ScanProgress) => void;
   setError: (error: string | null) => void;
+  setHasCleaned: (cleaned: boolean) => void;
   toggleSelected: (path: string) => void;
   selectAllSafe: (nodes: FileNode[]) => void;
   clearSelection: () => void;
@@ -25,6 +27,7 @@ export const useScanStore = create<ScanStore>((set, get) => ({
   progress: null,
   error: null,
   selectedPaths: new Set(),
+  hasCleaned: false,
 
   setScanResult: (result) => set({
     scanResult: result,
@@ -32,6 +35,7 @@ export const useScanStore = create<ScanStore>((set, get) => ({
     progress: null,
     error: null,
     selectedPaths: new Set(),
+    hasCleaned: false,
   }),
   setScanning: (isScanning) => set(
     isScanning
@@ -40,6 +44,7 @@ export const useScanStore = create<ScanStore>((set, get) => ({
   ),
   setProgress: (progress) => set({ progress }),
   setError: (error) => set({ error, isScanning: false, progress: null }),
+  setHasCleaned: (cleaned) => set({ hasCleaned: cleaned }),
 
   toggleSelected: (path) => {
     const current = new Set(get().selectedPaths);
@@ -152,5 +157,6 @@ export const useScanStore = create<ScanStore>((set, get) => ({
     progress: null,
     error: null,
     selectedPaths: new Set(),
+    hasCleaned: false,
   }),
 }));

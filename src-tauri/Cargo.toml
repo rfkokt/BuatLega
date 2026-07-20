@@ -38,3 +38,4 @@ chrono = { version = "0.4", features = ["serde"] }
 bytesize = "1"
 log = "0.4"
 env_logger = "0.11"
+sysinfo = "0.30.13"

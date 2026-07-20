@@ -94,7 +94,7 @@ strong, b {
 
 /* Premium Glass Effect */
 .glass {
-  background: var(--color-bg-secondary);
+  background: rgba(88, 38, 154, 0.15); /* Slight purple tint */
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -129,34 +129,15 @@ strong, b {
   100% { background-position: 0% 50%; }
 }
 
-.bg-mesh-home {
-  background: radial-gradient(circle at top right, rgba(255, 46, 147, 0.15), transparent 40%),
-              radial-gradient(circle at bottom left, rgba(0, 240, 255, 0.1), transparent 40%),
-              linear-gradient(-45deg, #0A051E, #150E3A, #0A051E);
+.bg-mesh-smartcare {
+  background: radial-gradient(circle at top right, rgba(191, 90, 242, 0.25), transparent 45%),
+              radial-gradient(circle at bottom left, rgba(255, 46, 147, 0.15), transparent 45%),
+              radial-gradient(circle at center, rgba(88, 38, 154, 0.1), transparent 50%),
+              linear-gradient(-45deg, #150E3A, #250B42, #100826);
   background-size: 400% 400%;
   animation: gradientBG 15s ease infinite;
 }
 
-.bg-mesh-cleanup {
-  background: radial-gradient(circle at top right, rgba(13, 148, 136, 0.2), transparent 40%),
-              radial-gradient(circle at bottom left, rgba(14, 165, 233, 0.15), transparent 40%),
-              linear-gradient(-45deg, #001f2b, #003344, #00121a);
-  background-size: 400% 400%;
-  animation: gradientBG 15s ease infinite;
-}
-
-.bg-mesh-performance {
-  background: radial-gradient(circle at top right, rgba(191, 90, 242, 0.2), transparent 40%),
-              radial-gradient(circle at bottom left, rgba(255, 46, 147, 0.15), transparent 40%),
-              linear-gradient(-45deg, #2b0b1d, #3d142c, #1a0410);
-  background-size: 400% 400%;
-  animation: gradientBG 15s ease infinite;
-}
-
-.bg-mesh-apps {
-  background: radial-gradient(circle at top right, rgba(100, 210, 255, 0.2), transparent 40%),
-              radial-gradient(circle at bottom left, rgba(10, 132, 255, 0.15), transparent 40%),
-              linear-gradient(-45deg, #111721, #202b38, #0a0d13);
-  background-size: 400% 400%;
-  animation: gradientBG 15s ease infinite;
+.bg-menubar-panel {
+  background: linear-gradient(160deg, #1f0b4d 0%, #200f57 30%, #15093a 100%);
 }
