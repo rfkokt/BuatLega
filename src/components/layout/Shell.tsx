@@ -1,11 +1,9 @@
 import type { ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+
 import { Sidebar } from './Sidebar';
 import { CleanupToast } from '../ui/CleanupToast';
 
 export function Shell({ children }: { children: ReactNode }) {
-  const location = useLocation();
-  const path = location.pathname;
 
   return (
     <div className={`flex h-screen w-screen overflow-hidden transition-all duration-1000 bg-mesh-smartcare`}>

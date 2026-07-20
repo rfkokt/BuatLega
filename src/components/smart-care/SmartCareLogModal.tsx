@@ -3,11 +3,8 @@ import {
   UserMinus, 
   FileText, 
   Gear, 
-  ChatTeardropText, 
   Clock, 
-  Envelope, 
   HardDrive, 
-  Globe,
   Check,
   Folder
 } from '@phosphor-icons/react';
